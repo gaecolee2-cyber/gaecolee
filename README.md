@@ -2,15 +2,52 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8" />
+<!-- [#7] zoom 허용: user-scalable=no / maximum-scale 제거 (WCAG) -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdn.jsdelivr.net; worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net; manifest-src 'self' blob:; frame-src blob:;" />
+<!-- [#17] CSP 하드닝 기준선. MediaPipe는 blob worker + wasm(eval) + jsdelivr fetch를 사용하므로
+     아래 소스가 필요합니다. 카메라/모델 로드가 실패하면 이 메타를 제거하세요(환경 민감). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdn.jsdelivr.net https://unpkg.com; worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net https://unpkg.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://unpkg.com; manifest-src 'self' blob:; frame-src blob:;" />
 <meta name="theme-color" content="#0a0a0b" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>협응성 청기백기 — MOTION-SENSING GAME</title>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<!-- [#6] CDN 버전 고정. (SRI integrity는 배포 시 실제 해시를 산출해 추가하세요:
+     openssl dgst -sha384 -binary file.js | openssl base64 -A) -->
+<!-- [수정#1,#20] CDN 단일 의존 제거: jsdelivr 실패 시 unpkg 자동 폴백.
+     로드 완료를 window.__mpReady(Promise)로 알려 초기화 타이밍 보장.
+     locateFile(wasm/model)도 실제로 성공한 CDN 기준으로 자동 정렬. -->
+<script>
+window.__MP=(function(){
+  var CDNS=["https://cdn.jsdelivr.net/npm","https://unpkg.com"];
+  var HANDS="@mediapipe/hands@0.4.1675469240";
+  var CAMU="@mediapipe/camera_utils@0.3.1675466862";
+  var handsBase=CDNS[0]+"/"+HANDS+"/";
+  function loadOne(path, ok){
+    var i=0;
+    (function next(){
+      if(i>=CDNS.length){ ok(false); return; }
+      var base=CDNS[i++], s=document.createElement("script");
+      s.src=base+"/"+path; s.crossOrigin="anonymous";
+      s.onload=function(){ ok(true, base); };
+      s.onerror=function(){ s.remove(); next(); };
+      document.head.appendChild(s);
+    })();
+  }
+  var ready=new Promise(function(resolve){
+    loadOne(CAMU+"/camera_utils.js", function(okC){
+      loadOne(HANDS+"/hands.js", function(okH, base){
+        if(okH && base){ handsBase=base+"/"+HANDS+"/"; }
+        window.__MP_HANDS_BASE=handsBase;
+        resolve(!!(okC && okH && typeof window.Hands!=="undefined" && typeof window.Camera!=="undefined"));
+      });
+    });
+  });
+  window.__MP_HANDS_BASE=handsBase;
+  return { ready:ready };
+})();
+window.__mpReady=window.__MP.ready;
+</script>
 <style>
   @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
   @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;900&family=Black+Han+Sans&display=swap');
@@ -58,9 +95,11 @@
     .stylelabel{display:none}
     .stylebar button{padding:6px 9px;font-size:16.5px}
     .gamectrls button{padding:6px 9px;font-size:16.5px}
+    /* 좁은 화면: 컨트롤이 넘치면 줄바꿈 허용 */
     #ctrlbar{gap:4px;flex-wrap:wrap;justify-content:center}
     .stylewrap,.stylebar,.gamectrls{flex-wrap:wrap;justify-content:center}
   }
+  /* 초소형 폭: 폰트/패딩 추가 축소 */
   @media (max-width:420px){
     .stylebar button,.gamectrls button{padding:5px 8px;font-size:14px}
     #topbar{padding:5px 9px;gap:4px}
@@ -69,6 +108,7 @@
     #topbar .scr{font-size:15px}
     #fsBtn{padding:4px 7px;font-size:17px}
   }
+  /* 가로(landscape)·낮은 높이: 제목 숨겨 스테이지 공간 확보 */
   @media (max-height:520px){
     h1{display:none}
     #topbar{padding:4px 10px}
@@ -93,6 +133,7 @@
   #badge.bonus{background:rgba(16,185,129,.85);color:#03130d}
   #badge.boss{background:rgba(239,68,68,.9);color:#fff}
   #badge.rev{background:rgba(250,204,21,.95);color:#111;animation:pop .25s ease}
+  /* [요청1] 중앙 마스코트 이모지 제거 */
 
   /* 다이내믹 콤보 인터랙티브 HUD 레이아웃 */
   #comboHud{position:absolute;top:90px;left:50%;transform:translateX(-50%);z-index:2;font-weight:500;color:var(--combo);text-shadow:0 2px 10px rgba(0,0,0,1);font-size:clamp(22px,6.5vw,34px);display:none;white-space:nowrap}
@@ -117,7 +158,16 @@
   #centerBig.ok{color:var(--ok)} #centerBig.bad{color:var(--bad)} #centerBig.rev{color:var(--primary)}
 
   /* 스크롤 제거형 컴팩트 오버레이 */
-  .overlay{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(6,6,8,.94);text-align:center;padding:12px 24px;overflow:hidden}
+  /* [수정#3] 콘텐츠가 스테이지 높이를 넘으면 시작 버튼이 잘려 보이지 않고, #stage{touch-action:none}로
+     손가락 스크롤도 막혔다. → 오버레이 자체를 세로 스크롤 컨테이너로 전환:
+     - overflow-y:auto + touch-action:pan-y 로 부모(none)를 덮어써 터치 스크롤 복구
+     - justify-content:safe center 로 넘칠 때 상단이 잘리지 않게(닿을 수 있게) 폴백
+     - overscroll-behavior:contain 으로 바운스 전파 차단 */
+  .overlay{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:safe center;gap:8px;background:rgba(6,6,8,.94);text-align:center;padding:16px 24px;overflow-y:auto;overflow-x:hidden;touch-action:pan-y;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+  /* 구형 브라우저(safe 미지원) 폴백: 첫/끝 요소 auto 마진으로 '맞으면 중앙, 넘치면 스크롤' */
+  .overlay>*{flex-shrink:0}
+  .overlay>:first-child{margin-top:auto}
+  .overlay>:last-child{margin-bottom:auto}
   .overlay.hidden{display:none}
   .overlay h2{font-size:clamp(24px,6.75vw,33px);font-weight:900;margin-bottom:1px;color:var(--primary)}
   button{background:var(--primary);color:#111;border:0;border-radius:10px;padding:10px 24px;font-size:21px;font-weight:800;cursor:pointer;transition:transform 0.1s;flex-shrink:0}
@@ -186,7 +236,8 @@
   #stage.glitch{animation:glitch .28s steps(2) 2}
   @keyframes glitch{0%{filter:none}50%{filter:hue-rotate(90deg) saturate(1.6)}100%{filter:none}}
 
-  /* ===== 모바일 전용 최적화 ===== */
+  /* ===== [요청4·8] 모바일 전용 최적화 ===== */
+  /* 사운드 안내 배너 */
   .sound-notice{
     max-width:540px;width:100%;margin:2px auto;padding:9px 12px;border-radius:10px;
     background:linear-gradient(135deg,rgba(250,204,21,.16),rgba(245,158,11,.10));
@@ -194,6 +245,7 @@
     font-size:clamp(13px,3.4vw,15.5px);line-height:1.45;text-align:center;flex-shrink:0
   }
   .sound-notice b{color:#fff}
+  /* 터치 타겟 ≥44px(애플 HIG) — 손가락 조작 정확도 */
   @media (pointer:coarse){
     .stylebar button,.gamectrls button{min-height:44px;padding-top:10px;padding-bottom:10px}
     #fsBtn{min-width:44px;min-height:44px}
@@ -201,13 +253,16 @@
     .skinrow .skin{min-height:40px}
     button{min-height:46px}
     .field input{min-height:46px}
+    /* iOS 더블탭 줌·롱프레스 메뉴 억제(게임 컨트롤) */
     .stylebar button,.gamectrls button,#fsBtn,.roundgrid button{touch-action:manipulation;-webkit-touch-callout:none;user-select:none}
   }
+  /* 세로(폼팩터) 우선: 카메라 스테이지가 화면 대부분을 차지 */
   @media (max-width:768px) and (orientation:portrait){
     #app{max-width:100%}
     #stage{flex:1 1 auto}
     h1{font-size:clamp(18px,5.4vw,26px)}
   }
+  /* 가로모드 회전 권장 오버레이(셀피 카메라는 세로가 유리) */
   #rotateHint{
     position:fixed;inset:0;z-index:50;display:none;flex-direction:column;gap:14px;
     align-items:center;justify-content:center;background:rgba(6,6,8,.97);text-align:center;padding:24px
@@ -216,30 +271,53 @@
   #rotateHint .t{font-size:20px;font-weight:900;color:var(--primary)}
   #rotateHint .s{font-size:15px;color:#d4d4d8;max-width:300px;line-height:1.5}
   @keyframes rotw{0%,100%{transform:rotate(0)}50%{transform:rotate(-90deg)}}
+  /* 폰만(coarse pointer) 가로 + 낮은 높이일 때 회전 권장 */
   @media (pointer:coarse) and (orientation:landscape) and (max-height:480px){
     #rotateHint{display:flex}
   }
 
-  /* 전역 BOLD 제거 + 고가시성 서체 통일 */
+  /* ===== [요청6·7] 전역 BOLD 제거 + 고가시성 서체 통일 =====
+     장식·볼드 서체(Orbitron/Black Han Sans) 대신 가독성 높은 Pretendard로 통일.
+     모든 굵기를 medium(500) 이하로 낮춰 BOLD를 제거. 강조는 크기·색·그림자로. */
   html, body, button, input, table, th, td, h1, h2, h3,
   span, div, li, ul, p, a, b, strong{
     font-family:'Pretendard', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
     letter-spacing:0 !important;
   }
   *{ font-weight:500 !important; }
-  b, strong{ font-weight:500 !important; }
+  b, strong{ font-weight:500 !important; }      /* <b> 태그도 볼드 해제 */
+  /* h1 그라데이션 텍스트는 유지하되 굵기만 해제 */
   h1{ background:linear-gradient(90deg,#facc15,#f59e0b);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent }
+  /* 큰 명령 텍스트는 카메라 위 가독성을 위해 그림자만 강화(굵기는 500 유지) */
   #centerBig{ text-shadow:0 3px 16px rgba(0,0,0,1), 0 0 4px rgba(0,0,0,.9) }
+
+  /* [수정#5] dvh 미지원 구형 iOS Safari 높이 폴백 */
+  @supports (-webkit-touch-callout: none){
+    #app{ min-height:-webkit-fill-available }
+  }
+  /* [수정#6] 라운드 선택 버튼 터치 타겟 높이 ≥44px(HIG) — 10칸 정렬은 유지 */
+  @media (pointer:coarse){
+    .roundgrid button{ min-height:44px }
+  }
+  /* [수정#15] 좁은 폭에서 표가 넘쳐도 페이지가 깨지지 않게 가로 스크롤 허용 */
+  .overlay table{ display:block; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch }
+  /* [수정#17] 모션 민감 사용자: 화면 흔들림/글리치/펄스 등 강한 애니메이션 비활성(가독성·멀미 완화 + 부하 감소) */
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important }
+    #stage.glitch{ animation:none !important }
+    #feverText{ animation:none !important }
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <h1>협응성 청기백기 - MOTION-SENSING GAME</h1>
 
+  <!-- [#9] 결과/명령을 스크린리더에 전달하는 라이브 리전 -->
   <div id="srLive" class="sr-only" aria-live="assertive" role="status"></div>
 
   <div id="topbar">
-    <span class="rnd" id="roundLabel">ROUND 0 / 100</span>
+    <span class="rnd" id="roundLabel">ROUND 0</span>
     <span class="lives" id="livesLabel">❤️❤️❤️</span>
     <span class="time" id="roundTime">20.0s</span>
     <span class="scr" id="scoreLabel">SCORE 0</span>
@@ -263,8 +341,9 @@
   </div>
 
   <div id="stage">
-    <div id="hudTaskCount" class="stage-hud-item">수행 0회</div>
-    <div id="hudAccuracy" class="stage-hud-item hud-fail">정답률 0%</div>
+    <!-- [요청2] WAVE 진행 표기: n/10 (10 도달 시 클램프) -->
+    <div id="hudTaskCount" class="stage-hud-item">WAVE 0/10</div>
+    <div id="hudAccuracy" class="stage-hud-item hud-fail">SUCCESS 0%</div>
 
     <canvas id="cv" width="1280" height="720"></canvas>
     <video id="vid" playsinline muted></video>
@@ -284,18 +363,14 @@
       <div class="rules2">
         <div class="rsec">1. 기본 조작</div>
         <ul>
-          <li><b>기본 조작:</b> 지문에 해당하는 위치에 손을 올리거나 <b>화면을 터치 후 상/하/좌/우로 드래그</b>합니다.</li>
-          <li><b>터치 컨트롤 가이드:</b><br>
-              - 화면 왼쪽 터치 후 위/아래 드래그: 청기 올리기/내리기<br>
-              - 화면 오른쪽 터치 후 위/아래 드래그: 백기 올리기/내리기
-          </li>
-          <li><b>진행 방식:</b> 중앙 지시문과 음성에 따라 손 또는 터치로 조작합니다.</li>
+          <li><b>기본 조작:</b> 지시문에 해당하는 위치에 손을 올립니다.<br>좌상(청기▲) · 좌하(청기▼) · 우상(백기▲) · 우하(백기▼)</li>
+          <li><b>진행 방식:</b> 중앙 지시문과 음성에 따라 손을 움직입니다.</li>
         </ul>
-        <div class="rsec">2. 게임 방식(GMAE MODE)</div>
-        <ul>          
+        <div class="rsec">2. 게임 방식(GAME MODE)</div>
+        <ul>
           <li><b>BASIC:</b> 지시문에 따라 움직입니다.</li>
           <li><b>REVERSE:</b> 지시문과 <b>정반대로</b> 움직여야 합니다.</li>
-          <li><b>ROTATION:</b> 화면이<b>상하 또는 좌우</b>로 반전됩니다.</li>
+          <li><b>ROTATION:</b> 화면이 <b>상하 또는 좌우</b>로 반전됩니다.</li>
         </ul>
         <div class="rsec">3. 점수 및 콤보</div>
         <ul>
@@ -304,11 +379,11 @@
         </ul>
         <div class="rsec">4. 라이프 및 라운드 구성</div>
         <ul>
-          <li><b>❤️ 라이프:</b> 하트 3개 제공. 정답률 55% 미만 시 라운드 재도전.</li>
+          <li><b>❤️ 라이프:</b> 하트 3개 제공. SUCCESS 55% 미만 시 라운드 재도전.</li>
           <li><b>😈 10 라운드:</b> 속도 증가 및 보스 특수 패턴 강화.</li>
         </ul>
       </div>
-      <div id="soundNotice" class="sound-notice">🔊 <b>소리 필수 게임</b> - 음성으로 명령이 나옵니다. 볼륨을 올리고 시작하세요.</div>
+      <div id="soundNotice" class="sound-notice">🔊 <b>소리 권장</b> — 음성으로 명령이 나옵니다. 볼륨을 올리고 시작하세요.</div>
       <div class="btnrow">
         <button id="startBtn" disabled>모델 로딩 중…</button>
       </div>
@@ -341,19 +416,24 @@
 </div>
 
 <script>
+/* Hand recognition engine: @mediapipe/hands + camera_utils (global Hands / Camera) */
+/* [#10] 전역 오염 제거: 전체를 IIFE로 캡슐화. 순수 함수는 window.__cbg 로 테스트 노출. */
 (function(){
 "use strict";
 
-/* ===================== i18n / 문자열 테이블 ===================== */
+/* ===================== i18n / 문자열 테이블 ([#20]) ===================== */
 const STR={
-  hudTask:(n)=>`수행 ${n}회`,
-  hudAcc:(p)=>`정답률 ${p}%`,
+  hudTask:(n)=>`WAVE ${Math.min(n,10)}/10`,
+  hudAcc:(p)=>`SUCCESS ${p}%`,
   confirmQuit:"진행 중인 게임을 종료하고 난이도 설정으로 이동할까요?",
   confirmEnd:"진행 중인 게임을 종료할까요?",
   cam:{
     NO_API:"카메라 API 가용성 확보 실패. 최신 브라우저를 권장합니다.",
     INSECURE:"보안 컨텍스트 오류. HTTPS 환경 실행이 강제됩니다.",
     DENIED:"카메라 접근 권한 획득 거부.",
+    NOT_FOUND:"카메라 장치를 찾을 수 없습니다. 연결 상태를 확인하세요.",
+    IN_USE:"다른 앱이 카메라를 사용 중입니다. 종료 후 다시 시도하세요.",
+    CONSTRAINT:"요청한 카메라 설정을 지원하지 않습니다. 다른 카메라로 시도하세요.",
     DEFAULT:"하드웨어 장치 마운트 실패.",
   },
   mpFail:"MediaPipe 스크립트 로드 실패.",
@@ -382,7 +462,7 @@ const app=$("app"), fsBtn=$("fsBtn");
 const srLive=$("srLive");
 let W=cv.width, H=cv.height;
 
-/* ===================== Config / Tuning ===================== */
+/* ===================== Config / Tuning ([#15] 매직넘버 중앙화) ===================== */
 const INITIAL_POSE={ blue:"down", white:"down" };
 const ROUNDS=100;
 const ROUND_MS=20000;
@@ -394,12 +474,15 @@ const REVERSE_START=6;
 
 const MS_PER_SYLLABLE=290;
 const TTS_STARTUP_MS=250;
+/* [요청7] 발음 정확도 우선: 고라운드 속도 상한을 하향(1.55 일반 / 1.65 보스).
+   너무 빠른 합성은 한국어 받침·이중모음이 뭉개져 알아듣기 어려움. */
 const TTS_RATE_BASE=1.0, TTS_RATE_STEP=0.025, TTS_RATE_MAX=1.55;
 const TTS_BOSS_MUL=1.08, TTS_BOSS_MAX=1.65;
 const ttsRate=(round)=> Math.min(TTS_RATE_BASE + (round-1)*TTS_RATE_STEP, TTS_RATE_MAX);
 const bossRate=(rate)=> Math.min(rate*TTS_BOSS_MUL, TTS_BOSS_MAX);
 const reactionBufferMs=(round)=> Math.max(650, 1900-(round-1)*70);
 
+/* 별점 / 점수 튜닝 상수 */
 const STAR3_RATE=0.90, STAR2_RATE=0.78, CLOSE_RATE=0.50;
 const BASE_SCORE=100, ROUND_SCORE_STEP=10, SPEED_BONUS_MAX=50, COMBO_SCORE_STEP=4, PERFECT_BONUS=50, COMBO_MUL_STEP=0.1;
 const XP_PER_CORRECT=5, XP_PER_STAR=30, XP_BOSS_BONUS=100, XP_BONUS_BONUS=40;
@@ -428,10 +511,14 @@ const isStyle=(s)=> Object.prototype.hasOwnProperty.call(STYLES,s);
 /* ===================== Skins ===================== */
 const SKINS=[
   { id:"classic", name:"클래식", lvl:1, blue:"#2563eb", white:"#f4f4f5" },
+  { id:"neon",    name:"네온",   lvl:3, blue:"#06b6d4", white:"#f472b6" },
+  { id:"sunset",  name:"선셋",   lvl:5, blue:"#f59e0b", white:"#ef4444" },
+  { id:"matrix",  name:"매트릭스", lvl:8, blue:"#22c55e", white:"#a3e635" },
 ];
 let SKIN={ blue:SKINS[0].blue, white:SKINS[0].white };
 
-/* ===================== RNG ===================== */
+/* ===================== RNG =====================
+   [#3] 미사용 seeded RNG(mulberry32) 제거. 기본 Math.random 사용. */
 const rnd=()=>Math.random();
 const pick=(a)=>a[Math.floor(rnd()*a.length)];
 
@@ -445,6 +532,7 @@ const state={
   lastResult:null, _hands:[],
   roundDeadline:0, roundTotal:0, roundCorrect:0,
   cmdStartTs:0, cmdDeadline:0, firstCorrectTs:0,
+  /* [#13] 무한 누적 배열 제거 → 러닝 집계 */
   reactionSum:0, reactionN:0, totalCmds:0, totalCorrect:0,
   bestScore:0, startedAt:1,
   lives:LIVES_START, combo:0, maxCombo:0,
@@ -456,8 +544,29 @@ const state={
   userPaused:false,
 };
 let hands=null, camera=null, sending=false;
+/* [수정#8/끊김] 적응형 프레임 스킵 상태 */
+let _sendAvg=0, _skipCtr=0, _skipMod=1;
 let loopRunning=false, cameraReady=false, connecting=false;
 let cmdTimer=0, cdTimer=0;
+
+/* [FIX#1/#7] pause-aware 커맨드 스케줄러: 어떤 콜백(issue/evaluate)이 대기 중인지와
+   '절대 발화 시각(_pendAt)'을 보존한다. 일시정지/탭전환 후에도 올바른 콜백을 정확한
+   잔여시간으로 재개해 더블 카운트·점수 오염을 차단한다. cmdSeq는 커맨드별 1회 평가 토큰. */
+let _pendFn=null, _pendAt=0, cmdSeq=0, _evaluatedSeq=-1;
+function schedule(fn, delay){
+  clearTimeout(cmdTimer);
+  delay=Math.max(0, delay|0);
+  _pendFn=fn; _pendAt=performance.now()+delay;
+  cmdTimer=setTimeout(()=>{ const f=_pendFn; _pendFn=null; if(f) f(); }, delay);
+}
+function clearSchedule(){ clearTimeout(cmdTimer); _pendFn=null; _pendAt=0; }
+
+/* [FIX#15] 동일 ms 종료 시 _id 충돌 → 'me' 하이라이트 오인 방지용 단조 증가 ID */
+let _recSeq=0;
+const RECID=()=> (Date.now()*1000 + (++_recSeq % 1000));
+
+/* [FIX#9] 파티클 상한 — 롱콤보에서 배열 폭증/GC 압박 차단 */
+const PARTICLE_CAP=220;
 
 /* ===================== Web Audio SFX ===================== */
 const FEVER_COMBO=7;
@@ -468,7 +577,7 @@ function initAudio(){
     if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
     if(audioCtx.state==="suspended") audioCtx.resume();
   }catch{ audioCtx=null; }
-  unlockTTS();
+  unlockTTS(); /* [요청7] 동일 제스처 내에서 음성 합성도 해제 → iOS 첫 명령 무음 방지 */
 }
 function playTone(freq, type, dur, vol=0.12){
   if(!sfxOn) return;
@@ -493,6 +602,7 @@ const sfxPerfect =()=>{ playTone(1318.51,"triangle",0.10,0.12); setTimeout(()=>p
 /* ===================== Engine ===================== */
 const FLAG_LABEL={ blue:"청기", white:"백기" };
 const ACTION_TEXT={ raise:"올려", lower:"내려", dontRaise:"올리지 마", dontLower:"내리지 마" };
+const ARROW={ up:"▲", down:"▼" };
 const INVERT={ raise:"lower", lower:"raise", dontRaise:"dontLower", dontLower:"dontRaise" };
 const effAction=(a, reverse)=> reverse ? INVERT[a] : a;
 
@@ -549,7 +659,7 @@ function generateCommand(prev, round, avoidDontLower, type, style){
 }
 const isPoseCorrect=(d,t)=> d.blue===t.blue && d.white===t.white;
 
-/* ===================== Persistence ===================== */
+/* ===================== Persistence ([#1] 스토리지 키 버그 수정) ===================== */
 const BEST_KEY="cbg.best";
 const LB_KEY="cbg.board.v3";
 const XP_KEY="cbg.xp.v1";
@@ -562,8 +672,9 @@ function loadBest(){ const n=safeGet(BEST_KEY,0); return (typeof n==="number"&&n
 function saveBest(n){ safeSet(BEST_KEY,n); }
 function loadXP(){ const n=safeGet(XP_KEY,0); return (typeof n==="number"&&n>=0)?n:0; }
 function saveXP(n){ safeSet(XP_KEY,n); }
-function loadNick(){ const s=safeGet(NICK_KEY,"Player"); return (typeof s==="string"&&s.trim())?s.trim().slice(0,10):"Player"; }
-function saveNick(s){ safeSet(NICK_KEY, String(s).trim().slice(0,10)); }
+/* 닉네임은 NICK_KEY 에만, 스킨은 SKIN_KEY 에만 저장(이전: 함수명 혼동으로 스킨이 닉네임을 덮어씀) */
+function loadNick(){ const s=safeGet(NICK_KEY,"Player"); const v=(typeof s==="string"&&s.trim())?s.trim().slice(0,10):"Player"; return v.replace(/[<>"'&]/g,""); }
+function saveNick(s){ safeSet(NICK_KEY, String(s).replace(/[<>"'&]/g,"").trim().slice(0,10)); }
 function loadSkinId(){ const s=safeGet(SKIN_KEY,"classic"); return SKINS.some(x=>x.id===s)?s:"classic"; }
 function saveSkin(id){ if(SKINS.some(x=>x.id===id)) safeSet(SKIN_KEY, id); }
 function saveStyle(s){ safeSet(STYLE_KEY,s); }
@@ -572,7 +683,7 @@ function validRec(r){ return r && typeof r.score==="number" && typeof r.accuracy
 function loadBoard(){ const a=safeGet(LB_KEY,[]); return Array.isArray(a)?a.filter(validRec):[]; }
 function saveBoard(a){ safeSet(LB_KEY,a.slice(0,10)); }
 function addRecord(rec){
-  const b=loadBoard(); rec._id=Date.now(); b.push(rec);
+  const b=loadBoard(); rec._id=RECID(); b.push(rec);
   b.sort((x,y)=> y.score-x.score || x.avgReaction-y.avgReaction);
   const top=b.slice(0,10); saveBoard(top); return top;
 }
@@ -587,19 +698,23 @@ function applySkin(id){
   saveSkin(s.id);
 }
 
-/* ===================== TTS ===================== */
+/* ===================== TTS (강건화: 무음 방지 + 발음 정확도) ===================== */
 const TTS_SUPPORTED = ("speechSynthesis" in window) && (typeof SpeechSynthesisUtterance!=="undefined");
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
+/* [수정#8/끊김] 모바일 공용 플래그 — DPR 상한·파티클·그림자·모델복잡도 적응에 사용 */
+const IS_MOBILE = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (("ontouchstart" in window) && Math.min(screen.width,screen.height)<820);
 let koVoice=null, ttsReady=false, ttsUnlocked=false, _voicePollT=0, _voicePolls=0;
 let _ttsWatchdog=0, _ttsRetryT=0;
 
+/* [요청6,7] 한국어 보이스 선별: 로컬(오프라인) 우선 → 발음 안정·지연 최소. */
 function pickKoVoice(vs){
   const ko = vs.filter(v=>/^ko/i.test(v.lang||""));
   if(!ko.length) return null;
   const score=(v)=>{
     let s=0;
     if(/ko(-|_)?KR/i.test(v.lang)) s+=4;
-    if(v.localService) s+=3;
-    if(/yuna|sora|google|미정|heami|nuri/i.test(v.name||"")) s+=2;
+    if(v.localService) s+=3;                         // 로컬 보이스 = 끊김/지연 적음
+    if(/yuna|sora|google|미정|heami|nuri/i.test(v.name||"")) s+=2; // 품질 좋은 한국어 보이스
     if(v.default) s+=1;
     return s;
   };
@@ -610,21 +725,24 @@ function refreshVoices(){
   const vs=window.speechSynthesis.getVoices()||[];
   if(vs.length){ koVoice=pickKoVoice(vs); ttsReady=true; }
 }
+/* getVoices()는 비동기(Chrome/Edge/일부 모바일) — 폴링으로 확실히 로드 */
 function startVoicePolling(){
   if(!TTS_SUPPORTED) return;
   refreshVoices();
   clearInterval(_voicePollT); _voicePolls=0;
   _voicePollT=setInterval(()=>{
     refreshVoices(); _voicePolls++;
-    if(ttsReady || _voicePolls>=16){ clearInterval(_voicePollT); }
+    if(ttsReady || _voicePolls>=16){ clearInterval(_voicePollT); } // 최대 ~4s
   }, 250);
 }
 
+/* [요청7] iOS/모바일 무음 차단 해제 — 반드시 사용자 제스처(탭) 안에서 1회 호출.
+   빈 발화로 합성 엔진을 깨운다. */
 function unlockTTS(){
   if(!TTS_SUPPORTED || ttsUnlocked) return;
   try{
     window.speechSynthesis.cancel();
-    const u=new SpeechSynthesisUtterance("\u200b");
+    const u=new SpeechSynthesisUtterance("\u200b"); // zero-width: 들리지 않음
     u.volume=0; u.lang="ko-KR"; if(koVoice) u.voice=koVoice;
     u.onend=()=>{ ttsUnlocked=true; };
     u.onerror=()=>{ ttsUnlocked=true; };
@@ -633,6 +751,9 @@ function unlockTTS(){
   }catch{}
 }
 
+/* [요청6,7] 핵심 발화 함수 — 무조건 소리가 나도록 다중 안전장치:
+   1) cancel→resume(끊김 버그 회피)  2) onerror/무발화 워치독 자동 재시도
+   3) pitch/volume 고정으로 발음 명료도 확보 */
 function speak(text, rate){
   if(!TTS_SUPPORTED || !text) return;
   const synth=window.speechSynthesis;
@@ -640,20 +761,22 @@ function speak(text, rate){
 
   const fire=(attempt)=>{
     try{
-      synth.cancel();
-      if(synth.paused) synth.resume();
+      synth.cancel();                       // 이전 발화 제거
+      if(synth.paused) synth.resume();       // 일부 브라우저 paused 고착 해제
       const u=new SpeechSynthesisUtterance(String(text));
       u.lang="ko-KR";
       if(koVoice) u.voice=koVoice;
       u.rate=Math.max(0.6, Math.min(rate||1.05, 2.0));
-      u.pitch=1.0;
-      u.volume=1.0;
+      u.pitch=1.0;                           // 발음 명료도(과한 피치 변형 금지)
+      u.volume=1.0;                          // 항상 최대 볼륨
       let started=false;
       u.onstart=()=>{ started=true; clearTimeout(_ttsWatchdog); };
       u.onerror=()=>{
         if(attempt<2){ _ttsRetryT=setTimeout(()=>fire(attempt+1), 120); }
       };
       synth.speak(u);
+      /* 워치독: 500ms 내 발화가 시작되지 않으면(무음 의심) 1회 재시도.
+         synth.speaking 교차 확인으로 정상 발화 중 오재시도 방지. */
       _ttsWatchdog=setTimeout(()=>{
         if(!started && !synth.speaking && attempt<2){ fire(attempt+1); }
       }, 500);
@@ -663,6 +786,14 @@ function speak(text, rate){
   };
   fire(0);
 }
+/* [FIX#2/#3] 발화 완전 정지: 합성 취소 + 재시도/워치독 타이머 제거.
+   일시정지·탭전환·라운드 종료·게임오버 시 호출해 '스테일 음성'이 결과 화면에서
+   뒤늦게 재생되는 문제를 차단한다. */
+function stopSpeak(){
+  clearTimeout(_ttsRetryT); clearTimeout(_ttsWatchdog);
+  if(TTS_SUPPORTED){ try{ window.speechSynthesis.cancel(); }catch{} }
+}
+/* [#9] 스크린리더 알림 (중복 억제) */
 let _lastAnnounce="";
 function announce(t){ if(t && t!==_lastAnnounce){ _lastAnnounce=t; srLive.textContent=t; } }
 
@@ -670,10 +801,13 @@ function announce(t){ if(t && t!==_lastAnnounce){ _lastAnnounce=t; srLive.textCo
 let particles=[], shake=0;
 let _ox=0,_oy=0,_dw=0,_dh=0;
 function spawnBurst(cx,cy,color){
-  for(let i=0;i<22;i++){
+  const N = IS_MOBILE ? 12 : 22;            /* [끊김] 모바일 파티클 수 축소 */
+  for(let i=0;i<N;i++){
     const a=Math.random()*Math.PI*2, sp=2+Math.random()*5;
     particles.push({ x:cx, y:cy, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-1.5, life:1, color, r:3+Math.random()*4 });
   }
+  /* [FIX#9] 상한 초과분은 가장 오래된 것부터 제거 → 롱콤보에서도 배열 폭증 방지 */
+  if(particles.length>PARTICLE_CAP){ particles.splice(0, particles.length-PARTICLE_CAP); }
 }
 function buzz(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch{} }
 let _judgeTO=0;
@@ -683,6 +817,14 @@ function showJudge(txt){
 }
 
 /* ===================== Game flow ===================== */
+/* [수정#9] 플레이 중 화면 꺼짐 방지(Screen Wake Lock). 미지원 기기는 무시. */
+let _wakeLock=null;
+async function acquireWake(){
+  try{ if("wakeLock" in navigator && !_wakeLock){ _wakeLock=await navigator.wakeLock.request("screen"); _wakeLock.addEventListener("release",()=>{ _wakeLock=null; }); } }catch{}
+}
+async function releaseWake(){
+  try{ if(_wakeLock){ const w=_wakeLock; _wakeLock=null; await w.release(); } }catch{}
+}
 function connectCamera(next){
   if(connecting) return Promise.resolve();
   connecting=true; fatalEl.style.display="none";
@@ -696,18 +838,15 @@ function connectCamera(next){
     if(typeof next==="function") next();
   }).catch((e)=>{
     connecting=false;
-    /* 카메라 오류 시 모바일/터치 전용 플레이를 위해 강제 스킵 처리 */
-    console.warn("Camera fallback applied:", e);
-    if(!loopRunning){ loopRunning=true; requestAnimationFrame(uiLoop); }
-    resizeCanvas();
-    introOverlay.classList.add("hidden");
-    if(typeof next==="function") next();
+    showFatal(cameraErrorMessage(e));
+    startBtn.disabled=false;
+    startBtn.textContent="다시 시도";
   });
 }
 
 function showRoundSelect(){
   state.phase="select"; state.mode="normal";
-  clearTimeout(cmdTimer); clearInterval(cdTimer);
+  clearSchedule(); clearInterval(cdTimer); stopSpeak();
   clearFlip(); stage.classList.remove("glitch"); topbar.classList.remove("fever-active");
   state.paused=false; state.pausedAt=0; state.userPaused=false;
   endOverlay.classList.add("hidden"); resultOverlay.classList.add("hidden");
@@ -740,6 +879,7 @@ function setStyle(id){
   else if(changed && (state.phase==="playing"||state.phase==="countdown")){ applyFlip(state.round); }
 }
 function renderStyles(){
+  /* [#4] 존재하지 않던 styleDesc 참조 제거 */
   for(const b of document.querySelectorAll(".stbtn")){
     b.classList.toggle("sel", b.dataset.style===state.style);
   }
@@ -749,17 +889,22 @@ function renderStyles(){
 function pauseGame(){
   if(state.phase==="playing" && !state.paused){
     state.paused=true; state.pausedAt=performance.now();
-    clearTimeout(cmdTimer); try{ window.speechSynthesis.cancel(); }catch{}
+    clearTimeout(cmdTimer);        /* 대기 콜백(_pendFn/_pendAt)은 보존 — 재개 때 그대로 사용 */
+    stopSpeak();                   /* [FIX#2/#3] 발화·재시도·워치독 모두 정지 */
   }
 }
 function resumeGame(){
   if(state.paused && state.phase==="playing"){
     const dt=performance.now()-state.pausedAt;
+    /* 게임 시간축 + 대기 콜백 발화시각을 동일하게 이동 → 라운드/명령 타이밍 일관성 유지 */
     state.roundDeadline+=dt; state.cmdDeadline+=dt; state.cmdStartTs+=dt;
     if(state.firstCorrectTs) state.firstCorrectTs+=dt;
+    _pendAt+=dt;
     state.paused=false; state.pausedAt=0;
-    const rem=Math.max(0, state.cmdDeadline-performance.now());
-    clearTimeout(cmdTimer); cmdTimer=setTimeout(evaluateCommand, rem);
+    if(_pendFn){                   /* [FIX#1] issue/evaluate 중 '실제로 대기 중이던' 콜백을 정확히 재개 */
+      const rem=Math.max(0, _pendAt-performance.now());
+      schedule(_pendFn, rem);
+    }
   } else { state.paused=false; state.pausedAt=0; }
 }
 function togglePause(){
@@ -771,7 +916,7 @@ function togglePause(){
 function beginGameAt(r, mode){
   selectOverlay.classList.add("hidden"); resultOverlay.classList.add("hidden"); endOverlay.classList.add("hidden");
   introOverlay.classList.add("hidden");
-  clearTimeout(cmdTimer); clearInterval(cdTimer);
+  clearSchedule(); clearInterval(cdTimer); stopSpeak();
   state.mode=mode||"normal";
   Object.assign(state,{
     score:0, round:0, command:null, lastResult:null, target:{...INITIAL_POSE},
@@ -796,6 +941,9 @@ function startRound(r){
 }
 
 function applyFlip(r){
+  /* [#18] 주의: screenFlip 의 시각 반전(CSS)은 의도적으로 손-사분면 매핑과 분리됩니다.
+     (감각 교란이 핵심 난이도) 랜드마크 오버레이는 화면과 함께 뒤집혀 보이지만,
+     정오 판정은 항상 원본 좌표 기준입니다. */
   let fx=false, fy=false;
   if(state.style==="screenFlip" && r>=2){
     const boss=state.roundType==="boss";
@@ -815,17 +963,25 @@ function clearFlip(){
 
 function runCountdown(done){
   state.phase="countdown"; state.count=3;
-  clearInterval(cdTimer);
+  clearInterval(cdTimer); clearTimeout(cdTimer);
   sfxTick();
-  cdTimer=setInterval(()=>{
-    state.count-=1;
-    if(state.count<=0){ clearInterval(cdTimer); sfxGo(); done(); }
-    else sfxTick();
-  },1000);
+  /* [FIX#11] 절대 시각 기준 드리프트 보정 + 페이즈 이탈 시 자동 중단.
+     기존 setInterval은 백그라운드 스로틀에서 누적 지연·중복 틱이 발생했다. */
+  const t0=performance.now();
+  const tick=()=>{
+    if(state.phase!=="countdown"){ return; }
+    const n=3-Math.floor((performance.now()-t0)/1000);
+    state.count=Math.max(0,n);
+    if(state.count<=0){ sfxGo(); if(state.phase==="countdown") done(); return; }
+    sfxTick();
+    cdTimer=setTimeout(tick, Math.max(0, t0+(4-state.count)*1000-performance.now()));
+  };
+  cdTimer=setTimeout(tick, 1000);
 }
 
 function beginRoundPlay(){
   state.phase="playing";
+  acquireWake();   /* [수정#9] 플레이 중 화면 유지 */
   state.roundDeadline=performance.now()+ROUND_MS;
   issueCommand();
 }
@@ -833,22 +989,28 @@ function beginRoundPlay(){
 function issueCommand(){
   const now=performance.now();
   const remain=state.roundDeadline-now;
+  /* 남은 라운드 시간이 사실상 없으면 새 명령을 띄우지 않고 라운드 종료 */
   if(remain<=900){ endRound(); return; }
   const prevDontLower=!!(state.command && state.command.hasDontLower);
   const command=generateCommand(state.target, state.round, prevDontLower, state.roundType, state.style);
   state.command=command; state.target=command.target;
   state.lastResult=null; state.firstCorrectTs=0; state.cmdStartTs=now;
   let rate=ttsRate(state.round); if(state.roundType==="boss") rate=bossRate(rate);
+  /* 명령 평가 시한이 라운드 종료 시각을 넘지 않도록 제한 → 시간이 다되면 풀던 도중이라도 종료 */
   state.cmdDeadline=Math.min(now+commandWindow(command.speakText, state.round, rate), state.roundDeadline);
   speak(command.speakText, rate);
   announce((command.reverse?"반대로! ":"")+command.text);
-  clearTimeout(cmdTimer);
-  cmdTimer=setTimeout(evaluateCommand, Math.max(0, state.cmdDeadline-now));
+  cmdSeq++;                                   /* [FIX#7] 새 커맨드 → 새 평가 토큰 */
+  schedule(evaluateCommand, state.cmdDeadline-now);
 }
 
 function evaluateCommand(){
+  if(_evaluatedSeq===cmdSeq) return;          /* [FIX#7] 동일 커맨드 중복 평가 차단 */
+  _evaluatedSeq=cmdSeq;
   const now=performance.now();
-  const correct=isPoseCorrect(state.detected, state.target);
+  /* [FIX#17] 명령 윈도 내에 한 번이라도 정답 포즈에 도달했으면 정답으로 인정.
+     마감 순간의 일시적 손 추적 드롭아웃이 정답을 오답으로 뒤집는 false-negative 제거. */
+  const correct = state.firstCorrectTs>0 || isPoseCorrect(state.detected, state.target);
   state.roundTotal++; state.totalCmds++;
   if(correct){
     state.roundCorrect++; state.totalCorrect++;
@@ -891,17 +1053,14 @@ function evaluateCommand(){
     announce("오답");
     sfxWrong(); shake=Math.max(shake,12); buzz([40,30,40]);
   }
-  clearTimeout(cmdTimer);
-  /* 오답 처리 직후 터치 상태값 초기화 락 해제 효과 */
-  state.detected={...INITIAL_POSE};
-  poseStable={...INITIAL_POSE};
-  
-  if(now>=state.roundDeadline){ setTimeout(endRound,500); }
-  else { cmdTimer=setTimeout(issueCommand, GAP_MS); }
+  if(now>=state.roundDeadline){ schedule(endRound,500); }
+  else { schedule(issueCommand, GAP_MS); }
 }
 
+/* [#2] deleteRound (endRound 중복 데드코드) 제거 */
+
 function endRound(){
-  clearTimeout(cmdTimer); clearInterval(cdTimer);
+  clearSchedule(); clearInterval(cdTimer); stopSpeak();
   const pct=state.roundTotal ? state.roundCorrect/state.roundTotal : 0;
   if(pct>=PASS_RATE){
     const stars = pct>=STAR3_RATE ? 3 : pct>=STAR2_RATE ? 2 : 1;
@@ -927,7 +1086,7 @@ function showRoundResult(pct, stars, gain){
     <div class="stars">${"★".repeat(stars)}${"☆".repeat(3-stars)}</div>
     <div class="statgrid">
       <div class="stat"><div class="k">정답</div><div class="v">${state.roundCorrect}/${state.roundTotal}</div></div>
-      <div class="stat"><div class="k">정답률</div><div class="v">${Math.round(pct*100)}%</div></div>
+      <div class="stat"><div class="k">SUCCESS</div><div class="v">${Math.round(pct*100)}%</div></div>
       <div class="stat"><div class="k">최대 콤보</div><div class="v">${state.maxCombo}회</div></div>
       <div class="stat"><div class="k">누적 점수</div><div class="v">${state.score}</div></div>
     </div>
@@ -948,7 +1107,7 @@ function showFailRetry(pct){
   const close = pct>=CLOSE_RATE;
   resultOverlay.innerHTML=`
     <h2>${close?"😣 아깝다!":"💥 라운드 실패"}</h2>
-    <div class="metaline">정답률 ${Math.round(pct*100)}% · 통과 기준 55%</div>
+    <div class="metaline">SUCCESS ${Math.round(pct*100)}% · 통과 기준 55%</div>
     <div class="lives" style="font-size:36px">${"❤️".repeat(Math.max(0,state.lives))}${"🖤".repeat(LIVES_START-Math.max(0,state.lives))}</div>
     <div class="metaline">${close?"한 번만 더 하면 됩니다 — 같은 라운드 재도전":"한 번만 더 하면 됩니다"}</div>
     <div class="btnrow">
@@ -962,7 +1121,8 @@ function showFailRetry(pct){
 
 function finishGame(win){
   state.phase="gameover";
-  clearTimeout(cmdTimer); clearInterval(cdTimer);
+  releaseWake();   /* [수정#9] 종료 시 화면 유지 해제 */
+  clearSchedule(); clearInterval(cdTimer); stopSpeak();
   clearFlip(); topbar.classList.remove("fever-active");
   state.paused=false; state.userPaused=false;
   resultOverlay.classList.add("hidden");
@@ -989,9 +1149,10 @@ function getHonorTitle(score, maxCombo){
 }
 
 function showEnd(win, rec, board){
+  const cell=(v)=>escapeHtml(String(v));   /* [FIX#8] 변조된 localStorage 값의 HTML 주입 차단 */
   const rows=board.map((r,i)=>{
     const me = r._id===rec._id ? ' class="me"' : '';
-    return `<tr${me}><td>${i+1}</td><td>${r.score}</td><td>${r.rounds}</td><td>${r.accuracy}%</td><td>${r.maxCombo||0}회</td></tr>`;
+    return `<tr${me}><td>${i+1}</td><td>${cell(Number(r.score)||0)}</td><td>${cell(Number(r.rounds)||0)}</td><td>${cell(Number(r.accuracy)||0)}%</td><td>${cell(Number(r.maxCombo)||0)}회</td></tr>`;
   }).join("");
   const honor=getHonorTitle(rec.score, rec.maxCombo);
   endOverlay.innerHTML=`
@@ -1000,12 +1161,12 @@ function showEnd(win, rec, board){
     <div class="statgrid">
       <div class="stat"><div class="k">점수</div><div class="v">${rec.score}</div></div>
       <div class="stat"><div class="k">라운드</div><div class="v">${rec.rounds}</div></div>
-      <div class="stat"><div class="k">정답률</div><div class="v">${rec.accuracy}%</div></div>
+      <div class="stat"><div class="k">SUCCESS</div><div class="v">${rec.accuracy}%</div></div>
       <div class="stat"><div class="k">최대 콤보</div><div class="v">${rec.maxCombo}회</div></div>
     </div>
     <div class="metaline">🏆 누적 기록 Top 10</div>
     <table>
-      <thead><tr><th>등수</th><th>점수</th><th>라운드</th><th>정답률</th><th>콤보</th></tr></thead>
+      <thead><tr><th>등수</th><th>점수</th><th>라운드</th><th>SUCCESS</th><th>콤보</th></tr></thead>
       <tbody>${rows||'<tr><td colspan="5">기록 없음</td></tr>'}</tbody>
     </table>
     <div class="btnrow">
@@ -1019,7 +1180,7 @@ function showEnd(win, rec, board){
   $("homeBtn").addEventListener("click", ()=>{ endOverlay.classList.add("hidden"); showRoundSelect(); });
 }
 
-/* ===================== Share card ===================== */
+/* ===================== Share card ([#16] 폰트 로드 대기) ===================== */
 async function downloadShareCard(rec){
   try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; }catch{}
   const c=document.createElement("canvas"); c.width=800; c.height=1000;
@@ -1035,7 +1196,7 @@ async function downloadShareCard(rec){
   x.fillStyle="#9b9ba3"; x.font="500 42px 'Pretendard', sans-serif"; x.fillText("SCORE", 400, 510);
   const stats=[
     ["도달 라운드", `${rec.rounds} / ${ROUNDS}`],
-    ["정답률", `${rec.accuracy}%`],
+    ["SUCCESS", `${rec.accuracy}%`],
     ["최대 콤보", `${rec.maxCombo}회`],
     ["평균 반응", `${(rec.avgReaction/1000).toFixed(2)}s`],
   ];
@@ -1055,11 +1216,24 @@ async function downloadShareCard(rec){
 /* ===================== Detection ===================== */
 const UP_Y=0.43, DOWN_Y=0.57;
 const PRESENCE_FRAMES=4;
+const FLIP_FRAMES=2;                 /* [FIX#18] 상태 전환에 필요한 연속 동일신호 프레임 수 */
 let poseStable={ blue:"down", white:"down" };
 let presence={ blue:0, white:0 };
+let _flipCand={ blue:{v:"down",n:0}, white:{v:"down",n:0} };
+let _lastFrameTs=0;                  /* [FIX#16] 마지막 추론결과 수신 시각(스톨 감지용) */
 const classifyY=(prev,y)=> y<UP_Y ? "up" : (y>DOWN_Y ? "down" : prev);
+/* [FIX#18] 랜드마크 노이즈로 인한 단일프레임 튐을 흡수: 같은 신호가 FLIP_FRAMES회
+   연속될 때만 상태를 바꾼다(데드존 히스테리시스와 함께 판정 깜빡임 제거). */
+function smoothState(side, raw){
+  if(raw===poseStable[side]){ _flipCand[side].v=raw; _flipCand[side].n=0; return poseStable[side]; }
+  const c=_flipCand[side];
+  if(raw===c.v){ c.n++; } else { c.v=raw; c.n=1; }
+  if(c.n>=FLIP_FRAMES){ c.n=0; return raw; }
+  return poseStable[side];
+}
 
 function onHandResults(results){
+ try{
   const handsArr=[];
   const seen={ blue:false, white:false };
   for(const lm of (results.multiHandLandmarks||[])){
@@ -1067,23 +1241,23 @@ function onHandResults(results){
     const sx=1-ref.x, sy=ref.y;
     const side= sx<0.5 ? "blue" : "white";
     seen[side]=true;
-    poseStable[side]=classifyY(poseStable[side], sy);
+    poseStable[side]=smoothState(side, classifyY(poseStable[side], sy));
     handsArr.push({ sx, sy, side, st:poseStable[side], lm });
   }
   for(const s of ["blue","white"]){
     if(seen[s]) presence[s]=PRESENCE_FRAMES;
-    else { presence[s]=Math.max(0,presence[s]-1); if(presence[s]===0 && !touchActive) poseStable[s]="down"; }
+    else { presence[s]=Math.max(0,presence[s]-1); if(presence[s]===0){ poseStable[s]="down"; _flipCand[s].v="down"; _flipCand[s].n=0; } }
   }
-  if (!touchActive) {
-    state.detected={ blue:poseStable.blue, white:poseStable.white };
-  }
+  state.detected={ blue:poseStable.blue, white:poseStable.white };
   state._hands=handsArr;
 
   if(state.phase==="playing" && !state.paused && state.firstCorrectTs===0 && isPoseCorrect(state.detected,state.target)){
     state.firstCorrectTs=performance.now();
   }
 
+  _lastFrameTs=performance.now();
   drawFrame(results.image, handsArr);
+ }catch(err){ /* [FIX#20] 프레임 처리 예외가 카메라 콜백을 죽이지 않도록 격리 */ }
 }
 
 function drawFrame(image, handsArr){
@@ -1094,24 +1268,20 @@ function drawFrame(image, handsArr){
   const vw=vid.videoWidth||W, vh=vid.videoHeight||H;
   const s=Math.max(W/vw, H/vh), dw=vw*s, dh=vh*s, ox=(W-dw)/2, oy=(H-dh)/2;
   _ox=ox; _oy=oy; _dw=dw; _dh=dh;
-  
-  if (cameraReady && image) {
-    ctx.save(); ctx.translate(W,0); ctx.scale(-1,1); ctx.drawImage(image, ox, oy, dw, dh); ctx.restore();
-  } else {
-    ctx.fillStyle = "#121214";
-    ctx.fillRect(0, 0, W, H);
-  }
+  ctx.save(); ctx.translate(W,0); ctx.scale(-1,1); ctx.drawImage(image, ox, oy, dw, dh); ctx.restore();
 
   drawGrid();
 
   const S=H/720;
   for(const h of handsArr){
+    /* 정답 매칭(체크) 표시는 제거 — 손의 up/down 상태만 표시(정답 미노출) */
     ctx.fillStyle = (h.st==="up" ? "#00ff66" : "#ff3333");
     for(const p of h.lm){ ctx.beginPath(); ctx.arc(ox+(1-p.x)*dw, oy+p.y*dh, 4*S, 0, Math.PI*2); ctx.fill(); }
     const bx=ox+h.sx*dw, by=oy+h.sy*dh;
     ctx.beginPath(); ctx.arc(bx, by, 22*S, 0, Math.PI*2);
     ctx.fillStyle=h.side==="blue"?hexA(SKIN.blue,.55):hexA(SKIN.white,.6);
     ctx.fill();
+    /* 색각 보조: up=실선 / down=점선 링 (형태로도 구분) + ▲▼ 글리프 (상태만, 정답 아님) */
     ctx.lineWidth=4*S; ctx.strokeStyle="rgba(0,0,0,.6)";
     ctx.setLineDash(h.st==="up" ? [] : [5*S,4*S]); ctx.stroke(); ctx.setLineDash([]);
     const glyph = (h.st==="up" ? "▲" : "▼");
@@ -1120,25 +1290,12 @@ function drawFrame(image, handsArr){
     ctx.fillText(glyph, bx, by);
   }
 
-  /* 터치 인터랙션 시각화 피드백 */
-  if (touchActive && touchSide) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(touchStartX, touchStartY, 35*S, 0, Math.PI*2);
-    ctx.fillStyle = touchSide === "blue" ? "rgba(37,99,235,0.4)" : "rgba(244,244,245,0.4)";
-    ctx.fill();
-    ctx.strokeStyle = touchSide === "blue" ? SKIN.blue : SKIN.white;
-    ctx.lineWidth = 3*S;
-    ctx.stroke();
-    ctx.restore();
-  }
-
   ctx.save();
   for(let i=particles.length-1;i>=0;i--){
     const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.35; p.life-=0.03;
     if(p.life<=0){ particles.splice(i,1); continue; }
     ctx.globalAlpha=Math.max(0,p.life); ctx.fillStyle=p.color;
-    ctx.shadowBlur=12*S; ctx.shadowColor=p.color;
+    if(!IS_MOBILE){ ctx.shadowBlur=12*S; ctx.shadowColor=p.color; }  /* [끊김] 모바일 blur 생략 */
     ctx.beginPath(); ctx.arc(p.x, p.y, (p.r||4)*S*p.life+1, 0, Math.PI*2); ctx.fill();
   }
   ctx.restore();
@@ -1174,49 +1331,72 @@ function drawGrid(){
   ctx.restore();
 }
 
-function uiLoop(){ syncUI(); if(!cameraReady) drawFrame(null, []); requestAnimationFrame(uiLoop); }
+function uiLoop(){ try{ syncUI(); }catch(e){ /* [FIX#20] syncUI 예외가 rAF 루프를 끊지 않도록 격리 */ } requestAnimationFrame(uiLoop); }
 
-let _lastBig=null;
+/* [요청5/끊김] 중앙 명령 텍스트를 1줄로 유지하며 폭에 맞춰 폰트 자동 조절.
+   기존: fontSize 변경→scrollWidth 읽기를 최대 12회 반복 = 강제 리플로우 12회/명령 전환(끊김 원인).
+   변경: 오프스크린 canvas measureText로 1회 측정 후 선형 환산 → 리플로우 0회. */
+let _lastBig=null, _measCtx=null;
 function fitBig(){
-  const el=centerBig;
-  if(!el.textContent){ el.style.fontSize=""; return; }
+  const el=centerBig, txt=el.textContent;
+  if(!txt){ el.style.fontSize=""; return; }
   const stageW=stage.clientWidth||W;
   const maxW=Math.max(60, stageW*0.92);
-  let lo=18, hi=Math.min(112, Math.round(stageW*0.18));
-  el.style.whiteSpace="nowrap";
-  el.style.fontSize=hi+"px";
-  if(el.scrollWidth<=maxW){ return; }
-  for(let i=0;i<12 && hi-lo>1;i++){
-    const mid=(lo+hi)>>1;
-    el.style.fontSize=mid+"px";
-    if(el.scrollWidth<=maxW) lo=mid; else hi=mid;
+  const hi=Math.min(112, Math.round(stageW*0.18));
+  if(!_measCtx){ try{ _measCtx=document.createElement("canvas").getContext("2d"); }catch{ _measCtx=null; } }
+  let size=hi;
+  if(_measCtx){
+    _measCtx.font="500 100px 'Pretendard', system-ui, -apple-system, sans-serif";
+    const w100=_measCtx.measureText(txt).width||1;
+    size=Math.floor(100*maxW/w100);
+    size=Math.max(18, Math.min(hi, size));
   }
-  el.style.fontSize=lo+"px";
+  el.style.whiteSpace="nowrap";
+  el.style.fontSize=size+"px";
 }
 
-/* ===================== UI sync ===================== */
+/* ===================== UI sync =====================
+   [끊김] syncUI는 매 rAF(~60fps) 실행된다. 기존엔 매 프레임 textContent/innerHTML/style을
+   무조건 다시 써서 스타일 재계산·리플로우가 60회/초 누적 → 모바일 끊김. 아래 캐시 세터로
+   '값이 바뀐 경우에만' DOM에 반영하여 불필요한 쓰기를 제거한다(동작 동일, 출력 동일). */
+const _uic=Object.create(null);
+function _txt(el,k,v){ if(_uic[k]!==v){ _uic[k]=v; el.textContent=v; } }
+function _html(el,k,v){ if(_uic[k]!==v){ _uic[k]=v; el.innerHTML=v; } }
+function _w(el,k,v){ if(_uic[k]!==v){ _uic[k]=v; el.style.width=v; } }
+function _disp(el,k,v){ if(_uic[k]!==v){ _uic[k]=v; el.style.display=v; } }
+function _cls(el,k,v){ if(_uic[k]!==v){ _uic[k]=v; el.className=v; } }
+function _op(el,k,v){ if(_uic[k]!==v){ _uic[k]=v; el.style.opacity=v; } }
+function _dis(el,k,v){ if(_uic[k]!==v){ _uic[k]=v; el.disabled=v; } }
+function _tog(el,k,cls,on){ const v=!!on; if(_uic[k]!==v){ _uic[k]=v; el.classList.toggle(cls,v); } }   /* [FIX#10] 변경 시에만 class 토글 */
+
+let _idleFrame=0;
 function syncUI(){
   const now=performance.now();
   const playing=state.phase==="playing", counting=state.phase==="countdown";
 
-  pauseToggle.disabled = !playing;
-  quitCtrlBtn.disabled = !playing;
+  /* [FIX#6] 유휴(인트로/선택/결과/게임오버 & 미연결) 구간에서는 격프레임으로 갱신해
+     불필요한 60fps DOM 비교/연산을 절반으로 줄인다(동작·표시 동일, 부하만 감소). */
+  if(!playing && !counting && !connecting){
+    if((_idleFrame++ & 1)===1) return;
+  } else { _idleFrame=0; }
 
-  if(playing) pauseToggle.textContent = state.paused ? "▶ 계속하기" : "⏸ 일시정지";
+  _dis(pauseToggle,"pdis",!playing);
+  _dis(quitCtrlBtn,"qdis",!playing);
+  if(playing) _txt(pauseToggle,"ptxt", state.paused ? "▶ 계속하기" : "⏸ 일시정지");
 
-  roundLabel.textContent=`ROUND ${state.round} / ${ROUNDS}`;
-  scoreLabel.textContent=`SCORE ${state.score}`;
-  livesLabel.textContent = (state.phase==="intro"||state.phase==="select")
+  _txt(roundLabel,"rl",`ROUND ${state.round}`);
+  _txt(scoreLabel,"sl",`SCORE ${state.score}`);
+  _txt(livesLabel,"lv",(state.phase==="intro"||state.phase==="select")
     ? "❤️".repeat(LIVES_START)
-    : "❤️".repeat(Math.max(0,state.lives))+"🖤".repeat(Math.max(0,LIVES_START-state.lives));
+    : "❤️".repeat(Math.max(0,state.lives))+"🖤".repeat(Math.max(0,LIVES_START-state.lives)));
 
   const tLeft=(playing && !state.paused) ? Math.max(0,(state.roundDeadline-now)/1000) : (playing?Math.max(0,(state.roundDeadline-state.pausedAt)/1000):ROUND_MS/1000);
-  roundTime.textContent=tLeft.toFixed(1)+"s";
-  roundTime.classList.toggle("warn", playing && tLeft<=5);
-  roundfill.style.width=(playing ? (tLeft/(ROUND_MS/1000))*100 : 100)+"%";
+  _txt(roundTime,"rt",tLeft.toFixed(1)+"s");
+  _tog(roundTime,"rtw","warn", playing && tLeft<=5);
+  _w(roundfill,"rf",(playing ? (tLeft/(ROUND_MS/1000))*100 : 100)+"%");
 
   let big="", sub="", cls="";
-  if(connecting && !cameraReady){ sub="카메라 연결 중…"; }
+  if(connecting){ sub="카메라 연결 중…"; }
   else if(state.paused && playing){ sub="계속하기 버튼을 누르면 게임이 계속됩니다"; big="⏸ 일시정지"; }
   else if(counting){ sub=`ROUND ${state.round}`; big=String(state.count); }
   else if(playing){
@@ -1224,9 +1404,12 @@ function syncUI(){
     else if(state.lastResult==="wrong"){ big="오답!"; cls="bad"; }
     else if(state.command){ big=state.command.text; cls=state.command.reverse?"rev":""; }
   }
-  centerSub.textContent=sub; centerBig.textContent=big; centerBig.className=cls;
+  /* [FIX#16] 추론 결과가 2.5초 이상 끊기면(카메라 프리즈/컨텍스트 손실) 사용자에게 알림 */
+  if(playing && !state.paused && _lastFrameTs && (now-_lastFrameTs)>2500){ sub="📷 카메라 신호 지연… 잠시만 기다려 주세요"; }
+
+  _txt(centerSub,"csub",sub); _txt(centerBig,"cbig",big); _cls(centerBig,"cbigc",cls);
   if(big!==_lastBig){ _lastBig=big; fitBig(); }
-  centerText.classList.toggle("hidden", !(connecting||counting||playing||(state.paused&&playing)));
+  _tog(centerText,"cth","hidden", !(connecting||counting||playing||(state.paused&&playing)));
 
   let bt="", bcls="";
   const flipTxt = state.flipX&&state.flipY ? "🔃 상하좌우 반전" : state.flipX ? "↔️ 좌우 반전" : state.flipY ? "↕️ 상하 반전" : "";
@@ -1234,66 +1417,113 @@ function syncUI(){
   else if((playing||counting) && flipTxt){ bt=flipTxt; bcls="rev"; }
   else if(state.roundType==="boss"){ bt="😈 BOSS ×1.5"; bcls="boss"; }
   else if(state.roundType==="bonus"){ bt="✨ BONUS ×2"; bcls="bonus"; }
-  badge.textContent=bt; badge.className="badge "+bcls;
-  badge.style.display=(bt && (playing||counting)) ? "block" : "none";
+  _txt(badge,"bt",bt); _cls(badge,"btc","badge "+bcls);
+  _disp(badge,"bd",(bt && (playing||counting)) ? "block" : "none");
 
   if(playing && state.combo>=1){
     const mult=(1+Math.min(state.combo,COMBO_MAX)*COMBO_MUL_STEP).toFixed(1);
-    comboHud.textContent=`COMBO ${state.combo}  (×${mult})`;
-    comboHud.style.display="block";
+    _txt(comboHud,"ch",`COMBO ${state.combo}  (×${mult})`);
+    _disp(comboHud,"chd","block");
   } else {
-    comboHud.style.display="none";
+    _disp(comboHud,"chd","none");
     comboHud.classList.remove("pop-active");
   }
 
-  feverText.textContent = (playing && state.feverMode) ? "🔥 FEVER ×2 🔥" : "";
-  if(!playing){ judgeText.style.opacity="0"; }
+  _txt(feverText,"ft",(playing && state.feverMode) ? "🔥 FEVER ×2 🔥" : "");
+  if(!playing){ _op(judgeText,"jo","0"); }
 
   const showPanel=playing||counting;
-  panel.classList.toggle("hidden", !showPanel);
+  _tog(panel,"pnl","hidden", !showPanel);
   if(playing){
     const total = state.cmdDeadline - state.cmdStartTs;
     const left = state.paused ? (state.cmdDeadline - state.pausedAt) : (state.cmdDeadline - now);
-    cmdfill.style.width=(total>0?Math.max(0,Math.min(1,left/total))*100:0)+"%";
+    _w(cmdfill,"cf",(total>0?Math.max(0,Math.min(1,left/total))*100:0)+"%");
 
-    hudTaskCount.innerHTML = STR.hudTask(state.roundTotal);
-
+    /* [요청2] WAVE n/10 표기 (STR.hudTask에서 10 클램프) */
+    _html(hudTaskCount,"htc",STR.hudTask(state.roundTotal));
     const pct = state.roundTotal ? Math.round(state.roundCorrect / state.roundTotal * 100) : 0;
-    hudAccuracy.innerHTML = STR.hudAcc(pct);
-    hudAccuracy.className = "stage-hud-item " + (pct >= 55 ? "hud-pass" : "hud-fail");
+    _html(hudAccuracy,"hac",STR.hudAcc(pct));
+    _cls(hudAccuracy,"hacc","stage-hud-item " + (pct >= PASS_RATE*100 ? "hud-pass" : "hud-fail"));
   } else if(counting){
-    cmdfill.style.width="100%";
-    hudTaskCount.innerHTML = STR.hudTask(0);
-    hudAccuracy.innerHTML = STR.hudAcc(0);
-    hudAccuracy.className = "stage-hud-item hud-fail";
+    _w(cmdfill,"cf","100%");
+    _html(hudTaskCount,"htc",STR.hudTask(0));
+    _html(hudAccuracy,"hac",STR.hudAcc(0));
+    _cls(hudAccuracy,"hacc","stage-hud-item hud-fail");
   }
 }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
 /* ===================== Camera ===================== */
 async function startCamera(){
   if(cameraReady) return;
   const local=location.hostname==="localhost"||location.hostname==="127.0.0.1";
   if(!window.isSecureContext && !local) throw new Error("INSECURE");
+  /* [수정#20] 카메라 API 자체가 없는 구형/임베디드 WebView → 친절한 메시지로 우아하게 실패 */
+  if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof Camera==="undefined") throw new Error("NO_API");
   if(!camera){
-    const isMobile=/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    /* 모바일: 전면(셀피) 카메라 + 저해상도로 성능 확보. 데스크톱: 720p */
     camera=new Camera(vid,{
       onFrame: async ()=>{
         if(sending||!hands) return;
+        /* [FIX#5] 추론은 필요한 페이즈에서만: 플레이(미정지)·카운트다운.
+           인트로/선택/결과/게임오버/일시정지 중 불필요한 손인식 추론을 차단해
+           발열·배터리·메인스레드 부하를 줄인다(오버레이가 스테이지를 덮는 구간). */
+        const active=(state.phase==="playing"&&!state.paused)||state.phase==="countdown";
+        if(!active) return;
+        /* [수정#8/끊김] 적응형 프레임 스킵: 직전 추론시간 EMA가 길면 프레임을 건너뛰어
+           메인스레드 여유를 확보(끊김 완화). 빠른 기기는 _skipMod=1 → 동작 동일. */
+        if((_skipCtr++ % _skipMod) !== 0) return;
         sending=true;
-        try{ await hands.send({ image: vid }); } finally{ sending=false; }
+        const t0=performance.now();
+        try{ await hands.send({ image: vid }); }
+        catch{ /* [FIX#20] WebGL 컨텍스트 손실 등 일시 오류는 삼키고 다음 프레임 재시도 */ }
+        finally{
+          const dt=performance.now()-t0;
+          _sendAvg = _sendAvg ? _sendAvg*0.8 + dt*0.2 : dt;
+          _skipMod = _sendAvg>55 ? 3 : _sendAvg>38 ? 2 : 1;
+          sending=false;
+        }
       },
-      width: isMobile?640:1280, height: isMobile?480:720,
+      width: IS_MOBILE?640:1280, height: IS_MOBILE?480:720,
       facingMode:"user"
     });
   }
   await camera.start();
   cameraReady=true;
 }
+/* [FIX#4] 카메라 스트림 해제: 디바이스 점유·표시등·배터리 누수 방지 */
+function stopCamera(){
+  try{ if(camera && typeof camera.stop==="function") camera.stop(); }catch{}
+  try{
+    const ms=vid.srcObject;
+    if(ms && ms.getTracks){ for(const t of ms.getTracks()){ try{ t.stop(); }catch{} } }
+    vid.srcObject=null;
+  }catch{}
+  camera=null; cameraReady=false;
+}
+
+/* [FIX#4/#12] 페이지 이탈 정리: 발화·스케줄·웨이크락·카메라 모두 해제 */
+function teardownAll(){
+  try{ clearSchedule(); }catch{}
+  try{ clearInterval(cdTimer); clearTimeout(cdTimer); }catch{}
+  stopSpeak(); releaseWake(); stopCamera();
+}
+window.addEventListener("pagehide", teardownAll);
+window.addEventListener("beforeunload", teardownAll);
+
+/* [FIX#20] 전역 소프트 에러 핸들러: 미처리 예외/거부가 콘솔 폭주·루프 중단으로
+   이어지지 않게 흡수(게임 루프는 rAF try/catch로 계속 유지). */
+window.addEventListener("error", ()=>{ /* swallow to keep game alive */ });
+window.addEventListener("unhandledrejection", (e)=>{ try{ e.preventDefault(); }catch{} });
+
 function cameraErrorMessage(e){
   switch(e&&(e.name||e.message)){
     case "NO_API": return STR.cam.NO_API;
     case "INSECURE": return STR.cam.INSECURE;
-    case "NotAllowedError": case "PermissionDeniedError": return STR.cam.DENIED;
+    case "NotAllowedError": case "PermissionDeniedError": case "SecurityError": return STR.cam.DENIED;
+    case "NotFoundError": case "DevicesNotFoundError": return STR.cam.NOT_FOUND;
+    case "NotReadableError": case "TrackStartError": case "AbortError": return STR.cam.IN_USE;
+    case "OverconstrainedError": case "ConstraintNotSatisfiedError": return STR.cam.CONSTRAINT;
     default: return STR.cam.DEFAULT;
   }
 }
@@ -1303,13 +1533,18 @@ function showFatal(msg){ fatalEl.textContent=msg; fatalEl.style.display="block";
 function resizeCanvas(){
   const r=cv.getBoundingClientRect();
   if(r.width<2||r.height<2) return;
-  const dpr=Math.min(window.devicePixelRatio||1, 2);
+  const dpr=Math.min(window.devicePixelRatio||1, IS_MOBILE?1.5:2);  /* [끊김] 모바일 픽셀면적 절감 */
   W=Math.round(r.width*dpr); H=Math.round(r.height*dpr);
   cv.width=W; cv.height=H;
-  _lastBig=null;
+  _lastBig=null; /* 리사이즈 시 다음 프레임에 중앙 텍스트 재맞춤 */
 }
 let _rzT=0;
-function onResize(){ clearTimeout(_rzT); _rzT=setTimeout(resizeCanvas, 60); }
+function onResize(){
+  /* [수정#14] 회전/주소창 변화 시 즉시 표시 크기에 맞춰 캔버스를 갱신해 검은 띠·왜곡을 방지하고,
+     이어서 디바운스로 최종 안정값을 한 번 더 적용(레이아웃 진동 흡수). */
+  resizeCanvas();
+  clearTimeout(_rzT); _rzT=setTimeout(resizeCanvas, 120);
+}
 function fsSupported(){ return !!(app.requestFullscreen||app.webkitRequestFullscreen||app.webkitRequestFullScreen); }
 function fsElement(){ return document.fullscreenElement||document.webkitFullscreenElement||null; }
 function toggleFullscreen(){
@@ -1325,118 +1560,104 @@ function toggleFullscreen(){
 /* ===================== Visibility System ===================== */
 document.addEventListener("visibilitychange", ()=>{
   if(document.hidden){
-    if(state.phase==="playing" && !state.paused){
-      state.paused=true; state.pausedAt=performance.now();
-      clearTimeout(cmdTimer); try{ window.speechSynthesis.cancel(); }catch{}
-    }
+    /* 탭 숨김: 진행 중이면 일시정지(스케줄러 보존 + 발화 정지) */
+    if(state.phase==="playing" && !state.paused){ pauseGame(); }
   } else {
-    if(state.paused && !state.userPaused){
-      const dt=performance.now()-state.pausedAt;
-      state.roundDeadline+=dt; state.cmdDeadline+=dt; state.cmdStartTs+=dt;
-      if(state.firstCorrectTs) state.firstCorrectTs+=dt;
-      state.paused=false; state.pausedAt=0;
-      const rem=Math.max(0, state.cmdDeadline-performance.now());
-      clearTimeout(cmdTimer); cmdTimer=setTimeout(evaluateCommand, rem);
+    /* 복귀: 사용자가 명시적으로 누른 일시정지가 아니면 자동 재개 */
+    if(state.paused && !state.userPaused && state.phase==="playing"){
+      acquireWake();               /* [수정#9] 탭 복귀 시 화면 유지 재획득 */
+      resumeGame();
     }
   }
 });
 
-/* ===================== [핵심 기능] 모바일 터치 제스처 처리기 ===================== */
-let touchActive = false;
-let touchStartX = 0;
-let touchStartY = 0;
-let touchSide = null; // "blue" (왼쪽), "white" (오른쪽)
-const TOUCH_THRESHOLD = 35; // 드래그 인정 판정 임계값 (픽셀 단위)
-
-function handleTouchStart(e) {
-  if (state.phase !== "playing" || state.paused) return;
-  const touch = e.touches[0];
-  const rect = cv.getBoundingClientRect();
-  
-  // 캔버스 상대 좌표 산출
-  touchStartX = touch.clientX - rect.left;
-  touchStartY = touch.clientY - rect.top;
-  
-  // 터치 위치의 좌우 경계를 기반으로 국적(Flag) 판별
-  touchSide = touchStartX < (rect.width / 2) ? "blue" : "white";
-  touchActive = true;
-}
-
-function handleTouchMove(e) {
-  if (!touchActive || state.phase !== "playing" || state.paused) return;
-  e.preventDefault(); // 고유 스크롤 링 방지
-  
-  const touch = e.touches[0];
-  const rect = cv.getBoundingClientRect();
-  const currentX = touch.clientX - rect.left;
-  const currentY = touch.clientY - rect.top;
-  
-  const diffY = currentY - touchStartY;
-  
-  // 임계값 초과 시 상태 전이 트리거
-  if (Math.abs(diffY) > TOUCH_THRESHOLD) {
-    const direction = diffY < 0 ? "up" : "down";
-    
-    // 글로벌 검출 모델 상태에 강제 인젝션
-    state.detected[touchSide] = direction;
-    poseStable[touchSide] = direction;
-    
-    // 정답 체크 최적화 바인딩
-    if (state.firstCorrectTs === 0 && isPoseCorrect(state.detected, state.target)) {
-      state.firstCorrectTs = performance.now();
-    }
-    
-    // 연속 입력 폭주 제한을 위해 터치 라이프사이클 세션 조기 마감
-    touchActive = false;
-  }
-}
-
-function handleTouchEnd() {
-  touchActive = false;
-  touchSide = null;
-}
-
-// 스크린(스테이지) 요소에 터치 드래그 리스너 바인딩 및 이벤트 전파 제어
-stage.addEventListener("touchstart", handleTouchStart, { passive: true });
-stage.addEventListener("touchmove", handleTouchMove, { passive: false });
-stage.addEventListener("touchend", handleTouchEnd, { passive: true });
-
-
-/* ===================== PWA ===================== */
+/* ===================== PWA ([#12] manifest + service worker) ===================== */
 function installPWA(){
+  /* [수정#4] 아이콘 없는 빈 manifest → 홈 추가 시 아이콘 미표시. 캔버스로 즉석 PNG 생성해 주입. */
+  function makeIcon(size, maskable){
+    try{
+      const c=document.createElement("canvas"); c.width=c.height=size;
+      const x=c.getContext("2d");
+      x.fillStyle="#0a0a0b"; x.fillRect(0,0,size,size);
+      const pad=maskable?size*0.18:size*0.12, fl=size*0.30;
+      x.fillStyle="#2563eb"; x.fillRect(pad, pad, fl, fl);                       /* 청기 */
+      x.fillStyle="#f4f4f5"; x.fillRect(size-pad-fl, size-pad-fl, fl, fl);       /* 백기 */
+      x.fillStyle="#facc15"; x.font=`900 ${Math.round(size*0.22)}px 'Pretendard',system-ui,sans-serif`;
+      x.textAlign="center"; x.textBaseline="middle"; x.fillText("청백", size/2, size/2);
+      return c.toDataURL("image/png");
+    }catch{ return ""; }
+  }
   try{
+    const i192=makeIcon(192,false), i512=makeIcon(512,true);
+    const icons=[];
+    if(i192) icons.push({ src:i192, sizes:"192x192", type:"image/png", purpose:"any" });
+    if(i512) icons.push({ src:i512, sizes:"512x512", type:"image/png", purpose:"any maskable" });
     const manifest={
       name:"청기백기 — MOTION-SENSING GAME", short_name:"청기백기",
       start_url:".", display:"standalone", orientation:"any",
       background_color:"#0a0a0b", theme_color:"#0a0a0b",
-      icons:[]
+      icons
     };
     const blob=new Blob([JSON.stringify(manifest)],{type:"application/manifest+json"});
     const link=document.createElement("link");
     link.rel="manifest"; link.href=URL.createObjectURL(blob);
     document.head.appendChild(link);
   }catch{}
+  if("serviceWorker" in navigator && location.protocol==="https:"){
+    /* [수정#3] sw.js 를 함께 배포하면 오프라인 캐싱 동작. 미배포 시 조용히 무시. */
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+  }
+}
+
+/* ===================== Self tests ([#14] ?selftest=1) ===================== */
+function runSelfTests(){
+  const t=[]; const ok=(n,c)=>t.push({test:n, pass:!!c});
+  ok("INVERT involutive", INVERT[INVERT.raise]==="raise" && INVERT[INVERT.dontRaise]==="dontRaise");
+  ok("applyInstruction raise", applyInstruction({blue:"down",white:"down"},{flag:"blue",action:"raise"},false).blue==="up");
+  ok("reverse flips action", applyInstruction({blue:"down",white:"down"},{flag:"blue",action:"raise"},true).blue==="down");
+  ok("dontRaise keeps pose", applyInstruction({blue:"down",white:"down"},{flag:"blue",action:"dontRaise"},false).blue==="down");
+  ok("isPoseCorrect", isPoseCorrect({blue:"up",white:"down"},{blue:"up",white:"down"})===true && isPoseCorrect({blue:"up",white:"up"},{blue:"up",white:"down"})===false);
+  ok("levelOf/xpForLevel inverse", levelOf(xpForLevel(5))===5 && levelOf(0)===1);
+  ok("estSpeechMs positive", estSpeechMs("청기 올려",1.2)>0);
+  ok("reverseP bounds", reverseP(1,"normal")===0 && reverseP(99,"boss")<=0.62 && reverseP(99,"boss")>=0);
+  ok("roundType cadence", roundTypeOf(10)==="boss" && roundTypeOf(5)==="bonus" && roundTypeOf(3)==="normal");
+  // generateCommand always changes target (no-op guard)
+  let allChanged=true;
+  for(let i=0;i<300;i++){
+    const prev={blue: i%2?"up":"down", white: i%3?"up":"down"};
+    const c=generateCommand(prev, 1+(i%40), false, roundTypeOf(1+(i%40)), i%2?"textReverse":"original");
+    if(c.target.blue===prev.blue && c.target.white===prev.white){ allChanged=false; break; }
+  }
+  ok("generateCommand mutates target (x300)", allChanged);
+  const passed=t.filter(x=>x.pass).length;
+  console.log(`%c[selftest] ${passed}/${t.length} passed`, `color:${passed===t.length?"#10b981":"#ef4444"};font-weight:bold`);
+  console.table(t);
+  return t;
 }
 
 /* ===================== Initialization ===================== */
 function createHands(){
-  const h=new Hands({ locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}` });
-  h.setOptions({ maxNumHands:2, modelComplexity:1, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+  const base = window.__MP_HANDS_BASE || "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/";
+  const h=new Hands({ locateFile:(f)=> base + f });
+  /* [수정#8/끊김] 모바일은 modelComplexity 0(경량)으로 시작 → 메인스레드 추론 부하·프레임 끊김 대폭 감소.
+     데스크톱은 1(정확도) 유지. 추가 적응은 onFrame 프레임 스킵으로 처리. */
+  h.setOptions({ maxNumHands:2, modelComplexity:IS_MOBILE?0:1, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
   h.onResults(onHandResults);
   return h;
 }
 
-(function init(){
+function init(){
   state.bestScore=loadBest();
   state.xp=loadXP();
   state.nick=loadNick();
-  applySkin("classic");
+  applySkin("classic"); /* [요청5] 스킨 선택 제거 — 클래식 고정 */
   state.style=loadStyle(); renderStyles();
   for(const b of document.querySelectorAll(".stbtn")){
     b.addEventListener("click", ()=>{ initAudio(); setStyle(b.dataset.style); });
   }
 
   pauseToggle.addEventListener("click", togglePause);
+  /* [#11] 진행 중 이탈은 확인 후 진행 */
   quitCtrlBtn.addEventListener("click", ()=>{
     if(state.phase==="playing" && !window.confirm(STR.confirmEnd)) return;
     state.userPaused=false; finishGame(false);
@@ -1450,10 +1671,13 @@ function createHands(){
   resizeCanvas();
   window.addEventListener("resize", onResize);
   window.addEventListener("orientationchange", onResize);
+  /* [수정#5/#14] 모바일 주소창 노출/키보드 등 visualViewport 변화에도 캔버스 재맞춤 */
+  try{ if(window.visualViewport){ window.visualViewport.addEventListener("resize", onResize); } }catch{}
   document.addEventListener("fullscreenchange", onResize);
   document.addEventListener("webkitfullscreenchange", onResize);
-  
+  /* [요청5] 폰트 로드 후 중앙 텍스트 재맞춤(웹폰트는 늦게 로드되어 폭이 바뀜) */
   try{ if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=>{ _lastBig=null; fitBig(); }); }catch{}
+  /* [요청5,8] 스테이지 크기 변화(회전·전체화면·키보드)에 폰트 재맞춤 */
   try{ if("ResizeObserver" in window){ new ResizeObserver(()=>{ _lastBig=null; }).observe(stage); } }catch{}
   if(fsSupported()){ fsBtn.addEventListener("click", toggleFullscreen); }
   else { fsBtn.style.display="none"; }
@@ -1462,16 +1686,24 @@ function createHands(){
 
   installPWA();
 
-  // 비디오 로딩 우회 처리를 보장하기 위해 MediaPipe 객체 체크 독립 분할
-  if(typeof Hands === "undefined" || typeof Camera === "undefined"){
-    console.warn("MediaPipe script non-blocking detection fallback.");
+  if(typeof Hands==="undefined" || typeof Camera==="undefined"){
+    showFatal(STR.mpFail);
+    startBtn.textContent="로드 실패"; return;
   }
   try{ hands=createHands(); }
-  catch(e){ console.warn("Hands model loading skipped for manual layout touch play."); }
-  
+  catch(e){ showFatal(STR.modelFail(e.message)); startBtn.textContent="로드 실패"; return; }
   startBtn.disabled=false;
-  startBtn.textContent="게임 시작";
-})();
+  startBtn.textContent="게임 시작 (카메라 연결)";
+
+  if(/[?&]selftest=1/.test(location.search)) runSelfTests();
+}
+
+/* [수정#1] MediaPipe 로드 완료 후 초기화(로드 실패해도 init 진입 → 기존 실패 메시지 유지) */
+if(window.__mpReady && typeof window.__mpReady.then==="function"){ window.__mpReady.then(init); }
+else { init(); }
+
+/* [#10][#14] 순수 로직 테스트 노출 */
+window.__cbg={ generateCommand, resolveTarget, applyInstruction, isPoseCorrect, levelOf, xpForLevel, INVERT, reverseP, estSpeechMs, roundTypeOf, runSelfTests };
 
 })();
 </script>
