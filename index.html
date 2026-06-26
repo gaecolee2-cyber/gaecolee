@@ -1258,7 +1258,6 @@
       </div>
       <div class="header-right">
         <button id="btn-retry" class="btn-retry-header" title="50점 차감, 새로운 단어로 보드 재구성"><span style="font-size:1.1rem">🔄</span><span style="color:#7b818b;font-size:0.7rem">문항 바꾸기</span></button>
-        <button type="button" id="btn-export" class="btn-export" title="현재 라운드를 PDF로 출력"><span style="font-size:1.1rem">🖨️</span><span style="color:#7b818b;font-size:0.7rem">출력하기</span></button>
         <button id="btn-home" class="btn-home"><span style="font-size:1.1rem">🏠</span><span style="color:#7b818b;font-size:0.7rem">처음으로</span></button>
       </div>
     </div>
@@ -1362,7 +1361,7 @@
         <div class="modal-title" id="end-title" style="font-size:1.6rem; margin-bottom:10px;">게임 완료</div>
         <p id="end-reason" class="end-reason-text"></p>
         
-        <button id="btn-download-errors" class="btn-download-txt">📁 오답노트 다운로드 (.txt)</button>
+        <button id="btn-download-errors" class="btn-download-txt">📁 오답 확인하기</button>
 
         <div id="badge-icon" class="badge-display">🥉</div>
         <div id="badge-name" class="badge-name">어휘 꿈나무</div>
@@ -2320,7 +2319,6 @@
   const timerDisplayEl = document.getElementById("timer-display");
   const headerStageTitle = document.getElementById("header-stage-title");
   const btnHome = document.getElementById("btn-home");
-  const btnExport = document.getElementById("btn-export");
 
   const monsterEnergyEl = document.getElementById("monster-energy");
   const monsterEls = {
@@ -2642,60 +2640,15 @@
   btnPreviewClose.addEventListener("click", closePreviewModal);
   previewModal.addEventListener("click", (e) => { if (e.target === previewModal) closePreviewModal(); });
 
-  // 오답노트 텍스트 미리보기
+  // 오답 확인하기 텍스트 미리보기
   function openErrorPreview(report) {
-    previewTitle.textContent = "📁 오답노트 미리보기";
+    previewTitle.textContent = "📁 오답 확인하기";
     previewBody.innerHTML = "";
     const pre = document.createElement("pre");
     pre.className = "preview-txt";
     pre.textContent = report;
     previewBody.appendChild(pre);
     previewBtns.innerHTML = "";
-    const dl = document.createElement("button");
-    dl.className = "btn-download-txt";
-    dl.style.width = "auto";
-    dl.style.margin = "0";
-    dl.textContent = "📥 다운로드 (.txt)";
-    dl.addEventListener("click", () => downloadErrorReport(report));
-    previewBtns.appendChild(dl);
-    previewModal.style.display = "flex";
-  }
-
-  // 출력(PDF) 이미지 미리보기
-  function openExportPreview(urls, onDownload, onPrint) {
-    previewTitle.textContent = "🖨️ 출력 미리보기";
-    previewBody.innerHTML = "";
-    const pagesWrap = document.createElement("div");
-    pagesWrap.className = "preview-pages";
-    urls.forEach((u, i) => {
-      const page = document.createElement("div");
-      page.className = "preview-page";
-      const label = document.createElement("div");
-      label.className = "preview-page-label";
-      label.textContent = i === 0 ? "1쪽 · 문제" : "2쪽 · 정답";
-      const img = document.createElement("img");
-      img.src = u;
-      img.alt = label.textContent;
-      page.appendChild(label);
-      page.appendChild(img);
-      pagesWrap.appendChild(page);
-    });
-    previewBody.appendChild(pagesWrap);
-    previewBtns.innerHTML = "";
-    const dl = document.createElement("button");
-    dl.className = "btn-download-txt";
-    dl.style.width = "auto";
-    dl.style.margin = "0";
-    dl.textContent = "📥 PDF 다운로드";
-    dl.addEventListener("click", onDownload);
-    const pr = document.createElement("button");
-    pr.className = "control-btn btn-modal-apply";
-    pr.style.padding = "13px 22px";
-    pr.style.fontSize = "1rem";
-    pr.textContent = "🖨️ 인쇄하기";
-    pr.addEventListener("click", onPrint);
-    previewBtns.appendChild(dl);
-    previewBtns.appendChild(pr);
     previewModal.style.display = "flex";
   }
 
@@ -3658,20 +3611,9 @@
     return report;
   }
 
-  function downloadErrorReport(report) {
-    const blob = new Blob([report], { type: "text/plain;charset=utf-8;" });
-    const uAnchor = document.createElement("a");
-    uAnchor.href = URL.createObjectURL(blob);
-    uAnchor.setAttribute("download", "crossword_error_analysis.txt");
-    document.body.appendChild(uAnchor);
-    uAnchor.click();
-    document.body.removeChild(uAnchor);
-    setTimeout(() => URL.revokeObjectURL(uAnchor.href), 1500);
-  }
-
   btnDownloadErrors.addEventListener("click", () => {
     if (incorrectRecords.length === 0) {
-      showInfoModal("틀린 내역이 감지되지 않았습니다. 완벽합니다!", "📁 오답노트");
+      showInfoModal("틀린 내역이 감지되지 않았습니다. 완벽합니다!", "📁 오답 확인하기");
       return;
     }
     openErrorPreview(buildErrorReport());
@@ -3733,379 +3675,6 @@
     resetToHome();
   });
 
-  // 현재 라운드를 PDF로 출력 (캔버스 직접 렌더 → 자체 PDF 생성). 외부 라이브러리·인터넷 불필요, 빈 페이지 발생하지 않음.
-  function exportRoundToWord() {
-    if (!currentRoundWords || currentRoundWords.length === 0) {
-      showInfoModal("먼저 게임을 시작한 뒤 출력해 주세요.", "🖨️ 출력하기");
-      return;
-    }
-
-    // ----- 보드 좌표/번호 수집 -----
-    const active = {};   // "r,c" -> letter
-    const numAt = {};    // "r,c" -> start number
-    let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
-    currentRoundWords.forEach(w => {
-      for (let i = 0; i < w.word.length; i++) {
-        const r = w.dir === "down" ? w.row + i : w.row;
-        const c = w.dir === "across" ? w.col + i : w.col;
-        active[r + "," + c] = w.word[i];
-        if (r < minR) minR = r;
-        if (r > maxR) maxR = r;
-        if (c < minC) minC = c;
-        if (c > maxC) maxC = c;
-      }
-    });
-    currentRoundWords.forEach(w => {
-      const key = w.row + "," + w.col;
-      if (numAt[key] === undefined || w.num < numAt[key]) numAt[key] = w.num;
-    });
-
-    const colCount = maxC - minC + 1;
-    const rowCount = maxR - minR + 1;
-    const roundNo = currentRoundIdx + 1;
-
-    const across = currentRoundWords.filter(w => w.dir === "across").sort((a, b) => a.num - b.num);
-    const down   = currentRoundWords.filter(w => w.dir === "down").sort((a, b) => a.num - b.num);
-
-    // ----- 가상 페이지(= A4 가로 비율) -----
-    const SCALE = 3;                 // 캔버스 오버샘플링(선명도)
-    const PW = 1040, PH = 735;       // 297:210 ≈ 1.414
-    const PAD = 26;
-    const FONT = `"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR","맑은 고딕",sans-serif`;
-    const CONTENT_TOP = PAD + 38;    // 제목 아래 본문 시작 y
-
-    function newCanvas() {
-      const cv = document.createElement("canvas");
-      cv.width = PW * SCALE;
-      cv.height = PH * SCALE;
-      const ctx = cv.getContext("2d");
-      ctx.scale(SCALE, SCALE);
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, PW, PH);
-      ctx.textBaseline = "top";
-      ctx.textAlign = "left";
-      return { cv, ctx };
-    }
-
-    // 단어/문자 단위 줄바꿈
-    function wrap(ctx, text, maxW) {
-      const words = String(text).split(" ");
-      const lines = [];
-      let line = "";
-      for (let wi = 0; wi < words.length; wi++) {
-        const word = words[wi];
-        const test = line ? line + " " + word : word;
-        if (ctx.measureText(test).width <= maxW) { line = test; continue; }
-        if (line) { lines.push(line); line = ""; }
-        if (ctx.measureText(word).width <= maxW) { line = word; }
-        else {
-          let chunk = "";
-          for (const ch of word) {
-            if (ctx.measureText(chunk + ch).width > maxW && chunk) { lines.push(chunk); chunk = ch; }
-            else chunk += ch;
-          }
-          line = chunk;
-        }
-      }
-      if (line) lines.push(line);
-      return lines;
-    }
-
-    function cellSize() {
-      const areaH = PH - PAD - CONTENT_TOP;
-      const maxBW = (PW - 2 * PAD) * 0.60;
-      let cell = Math.min(Math.floor(areaH / rowCount), Math.floor(maxBW / colCount));
-      if (cell < 16) cell = 16;
-      return cell;
-    }
-
-    function drawBoard(ctx, x, y, cell, fill) {
-      const numF = Math.max(7, Math.round(cell * 0.30));
-      const ansF = Math.max(10, Math.round(cell * 0.50));
-
-      // Pass 1: 배경 채우기 (활성=흰색, 비활성=옅은 회색 #f8f8f8)
-      for (let r = minR; r <= maxR; r++) {
-        for (let c = minC; c <= maxC; c++) {
-          const px = x + (c - minC) * cell;
-          const py = y + (r - minR) * cell;
-          const key = r + "," + c;
-          ctx.fillStyle = (active[key] !== undefined) ? "#fff" : "#f8f8f8";
-          ctx.fillRect(px, py, cell, cell);
-        }
-      }
-
-      // Pass 2: 글자 칸 외곽선 (보드 영역으로 클리핑 → 전체 외곽선 밖으로 삐져나오지 않음)
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x, y, cell * colCount, cell * rowCount);
-      ctx.clip();
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 1;
-      for (let r = minR; r <= maxR; r++) {
-        for (let c = minC; c <= maxC; c++) {
-          const key = r + "," + c;
-          if (active[key] === undefined) continue;
-          const px = x + (c - minC) * cell;
-          const py = y + (r - minR) * cell;
-          ctx.strokeRect(px + 0.5, py + 0.5, cell, cell);
-        }
-      }
-      ctx.restore();
-
-      // Pass 3: 텍스트 / 번호
-      for (let r = minR; r <= maxR; r++) {
-        for (let c = minC; c <= maxC; c++) {
-          const key = r + "," + c;
-          if (active[key] === undefined) continue;
-          const px = x + (c - minC) * cell;
-          const py = y + (r - minR) * cell;
-          // 문항 번호(좌상단) — 1·2페이지(문제·정답) 모두 표시
-          if (numAt[key] !== undefined) {
-            ctx.fillStyle = "#000";
-            ctx.font = `${numF}px ${FONT}`;
-            ctx.textAlign = "left";
-            ctx.textBaseline = "top";
-            ctx.fillText(String(numAt[key]), px + 2, py + 1);
-          }
-          // 정답 글자(중앙) — 정답 페이지(fill)만
-          if (fill) {
-            ctx.fillStyle = "#000";
-            ctx.font = `bold ${ansF}px ${FONT}`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(active[key], px + cell / 2, py + cell / 2 + 1);
-            ctx.textAlign = "left";
-            ctx.textBaseline = "top";
-          }
-        }
-      }
-
-      // Pass 4: 보드 전체 외곽선 (보드 경계에 정렬 → 내부선 끝을 깔끔히 덮음)
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, cell * colCount, cell * rowCount);
-
-      return { right: x + cell * colCount, bottom: y + cell * rowCount };
-    }
-
-    // 한 칼럼 높이 측정(자동 글자 크기 조정용)
-    function colHeight(ctx, title, list, colW, bodyF, isAns) {
-      const lineH = bodyF + 2.5;
-      let h = 24; // 섹션 헤더
-      ctx.font = `${bodyF}px ${FONT}`;
-      for (const w of list) {
-        const headStr = isAns ? (w.num + ". " + w.word) : (w.num + ".");
-        const restEn = isAns ? w.sentenceE.replace(/_{2,}/, w.word) : w.sentenceE;
-        const enLines = wrap(ctx, headStr + "  " + restEn, colW);
-        const koLines = wrap(ctx, "해석: " + w.sentenceK, colW);
-        h += (enLines.length + koLines.length) * lineH + 5;
-      }
-      return h;
-    }
-
-    function drawColumn(ctx, title, list, x, yStart, colW, bodyF, isAns) {
-      let y = yStart;
-      const lineH = bodyF + 2.5;
-      ctx.fillStyle = "#000";
-      ctx.font = `bold 12px ${FONT}`;
-      ctx.fillText(title, x, y);
-      ctx.fillRect(x, y + 16, colW, 1.6);
-      y += 24;
-      for (const w of list) {
-        const headStr = isAns ? (w.num + ". " + w.word) : (w.num + ".");
-        const restEn = isAns ? w.sentenceE.replace(/_{2,}/, w.word) : w.sentenceE;
-        const main = headStr + "  " + restEn;
-        // 본문(영어/완성문)
-        ctx.font = `${bodyF}px ${FONT}`;
-        ctx.fillStyle = isAns ? "#1f6f5c" : "#000";
-        const enLines = wrap(ctx, main, colW);
-        enLines.forEach((ln, i) => ctx.fillText(ln, x, y + i * lineH));
-        // 번호(+정답어) 굵게 덧그림
-        ctx.font = `bold ${bodyF}px ${FONT}`;
-        ctx.fillStyle = "#000";
-        ctx.fillText(headStr, x, y);
-        y += enLines.length * lineH;
-        // 해석(회색)
-        ctx.font = `${bodyF}px ${FONT}`;
-        ctx.fillStyle = "#555";
-        const koLines = wrap(ctx, "해석: " + w.sentenceK, colW);
-        koLines.forEach((ln, i) => ctx.fillText(ln, x, y + i * lineH));
-        y += koLines.length * lineH + 5;
-      }
-      return y;
-    }
-
-    function renderPage(ctx, isAns) {
-      // 제목
-      ctx.fillStyle = "#000";
-      ctx.font = `800 20px ${FONT}`;
-      ctx.textAlign = "center";
-      ctx.fillText(
-        isAns ? `정답 (Answers) - 라운드 ${roundNo}` : `영어 문장 십자말풀이 퀴즈 - 라운드 ${roundNo}`,
-        PW / 2, PAD
-      );
-      ctx.textAlign = "left";
-
-      // 보드(좌)
-      const cell = cellSize();
-      const bx = PAD, by = CONTENT_TOP;
-      const { right } = drawBoard(ctx, bx, by, cell, isAns);
-
-      // 텍스트 영역(우) — 1·2페이지 모두 동일한 '문항' 칼럼 출력 (정답 미표기)
-      const colIsAns = false;
-      const textX = right + 26;
-      const gap = 18;
-      const totalW = (PW - PAD) - textX;
-      const colW = Math.floor((totalW - gap) / 2);
-      const availH = PH - PAD - CONTENT_TOP;
-
-      // 자동 글자 크기: 두 칼럼 모두 한 페이지에 들어갈 때까지 축소(10→7)
-      let bodyF = 10;
-      while (bodyF > 7) {
-        const hA = colHeight(ctx, "", across, colW, bodyF, colIsAns);
-        const hD = colHeight(ctx, "", down, colW, bodyF, colIsAns);
-        if (Math.max(hA, hD) <= availH) break;
-        bodyF -= 0.5;
-      }
-
-      const aTitle = "가로 문항 (Across)";
-      const dTitle = "세로 문항 (Down)";
-      drawColumn(ctx, aTitle, across, textX, CONTENT_TOP, colW, bodyF, colIsAns);
-      drawColumn(ctx, dTitle, down, textX + colW + gap, CONTENT_TOP, colW, bodyF, colIsAns);
-    }
-
-    // dataURL(JPEG) -> 바이트 배열
-    function dataUrlToBytes(durl) {
-      const bin = atob(durl.split(",")[1]);
-      const u = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-      return u;
-    }
-
-    // 외부 라이브러리 없이 이미지 페이지로 구성된 PDF 바이트를 직접 생성
-    function buildPdf(images, pageW, pageH) {
-      const latin1 = (s) => {
-        const u = new Uint8Array(s.length);
-        for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i) & 0xff;
-        return u;
-      };
-      const chunks = [];
-      let len = 0;
-      const push = (u8) => { chunks.push(u8); len += u8.length; };
-      const pushStr = (s) => push(latin1(s));
-
-      const nObjs = 2 + images.length * 3;     // 1:Catalog 2:Pages, then per page: Page/Image/Content
-      const off = new Array(nObjs + 1).fill(0);
-
-      pushStr("%PDF-1.3\n");
-      push(new Uint8Array([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A])); // 바이너리 마커
-
-      off[1] = len;
-      pushStr("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-
-      const kids = images.map((_, i) => `${3 + i * 3} 0 R`).join(" ");
-      off[2] = len;
-      pushStr(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${images.length} >>\nendobj\n`);
-
-      images.forEach((img, i) => {
-        const pageN = 3 + i * 3, imgN = 4 + i * 3, contN = 5 + i * 3;
-
-        off[pageN] = len;
-        pushStr(`${pageN} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] ` +
-          `/Resources << /XObject << /Im0 ${imgN} 0 R >> >> /Contents ${contN} 0 R >>\nendobj\n`);
-
-        off[imgN] = len;
-        pushStr(`${imgN} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${img.w} /Height ${img.h} ` +
-          `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.data.length} >>\nstream\n`);
-        push(img.data);
-        pushStr("\nendstream\nendobj\n");
-
-        const content = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im0 Do\nQ\n`;
-        const cb = latin1(content);
-        off[contN] = len;
-        pushStr(`${contN} 0 obj\n<< /Length ${cb.length} >>\nstream\n`);
-        push(cb);
-        pushStr("\nendstream\nendobj\n");
-      });
-
-      const xrefStart = len;
-      let xref = `xref\n0 ${nObjs + 1}\n0000000000 65535 f \n`;
-      for (let n = 1; n <= nObjs; n++) xref += String(off[n]).padStart(10, "0") + " 00000 n \n";
-      pushStr(xref);
-      pushStr(`trailer\n<< /Size ${nObjs + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`);
-
-      const out = new Uint8Array(len);
-      let p = 0;
-      for (const c of chunks) { out.set(c, p); p += c.length; }
-      return out;
-    }
-
-    btnExport.disabled = true;
-    const build = () => {
-      try {
-        // A4 가로 = 841.89 x 595.28 pt
-        const PAGE_PT_W = 841.89, PAGE_PT_H = 595.28;
-
-        const p1 = newCanvas();
-        renderPage(p1.ctx, false);
-        const p2 = newCanvas();
-        renderPage(p2.ctx, true);
-
-        const pages = [p1, p2];
-        const previewUrls = pages.map(p => p.cv.toDataURL("image/jpeg", 0.92));
-
-        const generatePdf = () => {
-          const images = pages.map(p => ({
-            data: dataUrlToBytes(p.cv.toDataURL("image/jpeg", 0.92)),
-            w: p.cv.width,
-            h: p.cv.height
-          }));
-          const pdfBytes = buildPdf(images, PAGE_PT_W, PAGE_PT_H);
-          const blob = new Blob([pdfBytes], { type: "application/pdf" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `영어퀴즈_라운드${roundNo}.pdf`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(url), 1500);
-        };
-
-        const printPages = () => {
-          const w = window.open("", "_blank");
-          if (!w) {
-            showInfoModal("팝업이 차단되었습니다. 브라우저의 팝업 허용 후 다시 시도해 주세요.", "🖨️ 출력하기");
-            return;
-          }
-          const imgs = previewUrls
-            .map(u => `<img src="${u}" style="width:100%;display:block;page-break-after:always;">`)
-            .join("");
-          w.document.write(
-            `<!DOCTYPE html><html><head><meta charset="utf-8"><title>영어퀴즈_라운드${roundNo}</title>` +
-            `<style>@page{size:A4 landscape;margin:0}html,body{margin:0;padding:0}img{width:100%}</style></head>` +
-            `<body>${imgs}<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},250);};<\/script></body></html>`
-          );
-          w.document.close();
-        };
-
-        openExportPreview(previewUrls, generatePdf, printPages);
-      } catch (e) {
-        showInfoModal("출력 미리보기 생성 중 오류가 발생했습니다. 다시 시도해 주세요.", "🖨️ 출력하기");
-      } finally {
-        btnExport.disabled = false;
-      }
-    };
-
-    // 웹폰트(Noto Sans KR) 로딩 보장 후 렌더
-    if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(build).catch(build);
-    } else {
-      build();
-    }
-  }
-
-  btnExport.addEventListener("click", exportRoundToWord);
 
 </script>
 </body>
